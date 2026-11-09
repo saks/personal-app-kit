@@ -15,6 +15,16 @@ repository = "https://github.com/saks/personal-app-kit"
 
 [workspace.dependencies]
 kit-core = { path = "crates/kit-core" }
+# kit-db (host only). turso is pinned exactly: both apps' replicas and
+# kit-db's busy classification depend on 0.8.3 behaviour.
+turso = { version = "=0.8.3", default-features = false }
+sea-query = { version = "1", default-features = false, features = ["backend-sqlite", "thread-safe"] }
+thiserror = "2"
+tracing = "0.1"
+webpki-root-certs = "1"
+base64 = "0.23"
+tokio = { version = "1", features = ["rt", "macros"] }
+tempfile = "3"
 chrono = { version = "0.4", default-features = false, features = ["now"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -23,7 +33,6 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = ["Window", "Document", "Element", "Storage", "MediaQueryList", "EventTarget"] }
 js-sys = "0.3"
-tracing = { version = "0.1", default-features = false, features = ["std"] }
 # Android JNI (tauri-plugin-kit-android). Same versions as OB.
 jni = "0.22"
 ndk-context = "0.1"
