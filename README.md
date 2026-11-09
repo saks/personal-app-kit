@@ -12,6 +12,7 @@ Plan and decisions: [sickness_tracker#87](https://github.com/saks/sickness_track
 | `kit-build` | build-dependency | `emit_git_info(&EnvPrefix)`: sets `<PREFIX>_GIT_SHA` and `<PREFIX>_BUILT_AT` for `env!` |
 | `kit-theme` | host + wasm (`yew` feature) | Shared daisyUI theme set: `ThemePrefs`/`Theme` enums, `ThemeProvider` + `use_theme` (feature `yew`, persistence via `ThemeApi`, mirror keys from `StoragePrefix`), `css/themes.css`, `js/theme-boot.js` |
 | `kit-sync-types` | host + wasm | Plain sync types both engines share: `SyncTrigger`, `FailureClass` + `FailureKind`, `SyncSkip`, `SyncBadge` + `badge(BadgeInput, BadgePolicy)`, `SyncUrl` / `AuthToken` (parsed once, token redacted). No engine, no built-in URLs |
+| `tauri-plugin-kit-android` | Android (host for tests; empty on wasm) | Shared WorkManager background-sync job: `SyncWorker` Kotlin library (linked into the app's Gradle build by `build.rs`), `background_sync!(fn() -> BackgroundSync)`, `enqueue()`, `WorkerResult`. JNI symbol fixed by the kit's package |
 
 Every directory under `crates/` is a workspace member. Nothing app-specific is baked into a crate: URLs, env-var prefixes, log tags, storage keys and timings are typed config the app passes in.
 

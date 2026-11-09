@@ -1,0 +1,27 @@
+[package]
+name = "tauri-plugin-kit-android"
+description = "Tauri 2 mobile plugin: the shared WorkManager background-sync job (SyncWorker) and its JNI glue."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+# Tauri plugin convention: tauri-build reads DEP_TAURI_PLUGIN_KIT_ANDROID_ANDROID_LIBRARY_PATH
+# and adds `android/` to the app's Gradle build.
+links = "tauri-plugin-kit-android"
+
+[dependencies]
+kit-core = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { workspace = true }
+ndk-context = { workspace = true }
+
+# Host tests compile the JNI glue (OB's `cfg(any(target_os = "android", test))`).
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+jni = { workspace = true }
+ndk-context = { workspace = true }
+
+[lints]
+workspace = true
