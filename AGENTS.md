@@ -37,7 +37,7 @@ Each new crate sets `version.workspace = true` (and the other `*.workspace` keys
 make check   # layout checks, fmt --check, clippy -D warnings (host + wasm32), cargo test
 ```
 
-`make check` is the gate; format before claiming done. GitHub Actions is off on purpose; do not add workflows. Every test run is time-bounded (`TEST_TIMEOUT_S`). A change that alters a public API also needs the matching adoption issue or PR in each app.
+`make check` is the gate; format before claiming done. Clippy (host + wasm32) and tests run with `--all-features`, so code behind a feature such as `yew` is gated too. GitHub Actions is off on purpose; do not add workflows. Every test run is time-bounded (`TEST_TIMEOUT_S`). A change that alters a public API also needs the matching adoption issue or PR in each app.
 
 ## Git
 
