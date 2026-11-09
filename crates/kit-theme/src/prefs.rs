@@ -53,6 +53,10 @@ pub enum Theme {
     PrismaDark,
 }
 
+/// The user's theme choice: a family and a mode. Serialized as
+/// `{"family": "default"|"prisma", "mode": "system"|"light"|"dark"}`; this
+/// wire format is public API. Deserializing never fails on an object: each
+/// missing, unknown or mistyped field falls back to its default on its own.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ThemePrefs {

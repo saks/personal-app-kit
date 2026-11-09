@@ -26,10 +26,10 @@ fmt:
 	cargo fmt --all -- --check
 
 clippy:
-	cargo clippy --workspace --all-targets --locked -- -D warnings
+	cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
 clippy-wasm:
-	cargo clippy --workspace --all-targets --locked --target $(WASM_TARGET) -- -D warnings
+	cargo clippy --workspace --all-targets --all-features --locked --target $(WASM_TARGET) -- -D warnings
 
 test:
-	$(BOUNDED) cargo test --workspace --locked
+	$(BOUNDED) cargo test --workspace --all-features --locked

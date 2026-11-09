@@ -3,7 +3,8 @@
    From sickness_tracker input.css (#45). Shipped through the app's
    scripts/kit-css.sh (docs/tailwind-across-crates.md), which rewrites
    `@plugin "daisyui-theme"` to the app's own daisyui-theme.mjs.
-   Overrides of app classes (dock, theme picker cards, join items) stay in each app. */
+   The Prisma accent rules on daisyUI components (.dock, .dock-active,
+   .join-item) ship here; the picker-card rules stay in each app. */
 
 @plugin "daisyui-theme" {
   name: "appLight";
@@ -90,7 +91,7 @@
 }
 
 /* Prisma: opt-in palette pair, only reached through data-theme on <html>
-   (Settings → Appearance; src/theme.rs is the only Rust that sets it).
+   (kit-theme's ThemeProvider is the only Rust that sets it).
    Palette: Gray #bbbbbb, White #eeeeee, Yellow #fff700, Senape #acc900,
    Lime #96ff00, Green #00c900, Alga #00c99b, Aqua #00d8ff, Cyan #009cff,
    Violet #9e91ff, Purple #bb66ff, Fuchsia #ff44cc, Magenta #ff2f6a,
@@ -218,4 +219,19 @@
 }
 [data-theme="prismaLight"] .badge-soft {
   background-color: color-mix(in oklab, var(--badge-color, var(--color-base-content)) 10%, var(--color-base-200));
+}
+
+/* Prisma brand accent: Fuchsia marks "where you are / what is chosen",
+   never meaning. Aqua stays dose + main action; fever, warning and OK
+   colours are untouched. accent = text/icon/border tone (deep in Light),
+   --accent-fill = the vivid swatch for fills with dark ink. #45. */
+:is([data-theme="prismaDark"], [data-theme="prismaLight"]) .dock .dock-active {
+  color: var(--color-accent);
+}
+:is([data-theme="prismaDark"], [data-theme="prismaLight"]) .dock .dock-active .dock-label {
+  color: var(--color-base-content);
+}
+:is([data-theme="prismaDark"], [data-theme="prismaLight"]) .join-item.btn-primary {
+  --btn-color: var(--accent-fill);
+  --btn-fg: var(--accent-fill-content);
 }

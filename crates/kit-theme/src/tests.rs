@@ -3,7 +3,7 @@ use kit_core::StoragePrefix;
 use super::{BOOT_JS, MirrorKeys, Shade, THEMES_CSS, Theme, ThemeFamily, ThemeMode, ThemePrefs};
 
 fn prefix() -> StoragePrefix {
-    "sickness-tracker".parse().unwrap()
+    "my-app".parse().unwrap()
 }
 
 #[test]
@@ -15,10 +15,7 @@ fn mirror_keys_come_from_the_storage_prefix() {
     };
     assert_eq!(
         keys.entries(prefs),
-        [
-            ("sickness-tracker.theme", "prisma"),
-            ("sickness-tracker.mode", "dark")
-        ]
+        [("my-app.theme", "prisma"), ("my-app.mode", "dark")]
     );
 }
 
@@ -77,8 +74,9 @@ fn every_family_and_shade_has_a_theme_block_in_the_css() {
 }
 
 #[test]
-fn the_css_keeps_app_class_overrides_out() {
-    for app_class in [".dock-active", ".theme-option", ".join-item"] {
-        assert!(!THEMES_CSS.contains(app_class), "{app_class}");
+fn the_css_ships_the_component_accents_and_keeps_picker_cards_out() {
+    for component in [".dock .dock-active", ".join-item.btn-primary"] {
+        assert!(THEMES_CSS.contains(component), "{component}");
     }
+    assert!(!THEMES_CSS.contains(".theme-option"));
 }

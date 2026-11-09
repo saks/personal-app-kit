@@ -25,6 +25,10 @@ use crate::state::{Pick, SaveQueue, Source, ThemeAction};
 
 /// Why the app's store could not load or save the prefs. The app maps its
 /// own IPC error into this; the kit only logs it.
+///
+/// A plain message on purpose: the provider never branches on the cause
+/// (a failed load falls back to Default / System, a failed save keeps the
+/// session's choice), so a typed enum would only mirror each app's IPC errors.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ThemeApiError(pub String);
 
@@ -38,9 +42,13 @@ impl std::error::Error for ThemeApiError {}
 
 pub type ThemeFuture<T> = Pin<Box<dyn Future<Output = Result<T, ThemeApiError>>>>;
 
-/// The app's persistence for the prefs (e.g. `settings.json` over IPC).
+/// The app's persistence for the prefs (e.g. `settings.json` over IPC), so
+/// the kit never knows command names. Device-local; never synced.
 pub trait ThemeApi {
+    /// Read the stored prefs. Called once, when the provider mounts.
     fn load(&self) -> ThemeFuture<ThemePrefs>;
+    /// Store a choice. Calls never overlap: the provider waits for each to
+    /// finish and then sends only the latest pick made meanwhile.
     fn save(&self, prefs: ThemePrefs) -> ThemeFuture<()>;
 }
 
@@ -83,14 +91,22 @@ impl ThemeCtx {
     }
 }
 
+/// The theme state and a way to pick, for a picker under [`ThemeProvider`].
+/// `None` outside a provider.
 #[hook]
 pub fn use_theme() -> Option<ThemeCtx> {
     use_context::<ThemeCtx>()
 }
 
+/// Props for [`ThemeProvider`].
 #[derive(Properties, PartialEq)]
 pub struct ThemeProviderProps {
+    /// Prefix for the `localStorage` mirror keys (`<prefix>.theme`,
+    /// `<prefix>.mode`). Must match `data-storage-prefix` on the
+    /// `theme-boot.js` script tag.
     pub storage_prefix: StoragePrefix,
+    /// The app's store. Read once on mount; a later change to this prop is
+    /// ignored (no reload), so pass one stable instance.
     pub api: ThemeBackend,
     pub children: Html,
 }
@@ -113,6 +129,14 @@ fn save(api: &ThemeBackend, queue: &Rc<RefCell<SaveQueue>>, prefs: ThemePrefs) {
     });
 }
 
+/// Owns the theme for the app: put it once near the root, around everything
+/// that calls [`use_theme`].
+///
+/// On mount it loads the prefs from `api` exactly once (a changed `api`
+/// prop is not reloaded). Until then the boot script's `data-theme` stands
+/// and [`Source::Boot`] keeps a picker disabled. After that it applies
+/// `data-theme`, follows the OS light/dark switch, writes the mirror, saves
+/// each pick and sets the Android system bars.
 #[function_component(ThemeProvider)]
 pub fn theme_provider(props: &ThemeProviderProps) -> Html {
     let source = use_reducer(|| Source::Boot);
