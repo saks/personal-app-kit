@@ -1253,6 +1253,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "kit-sync-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "kit-theme"
 version = "0.1.0"
 dependencies = [

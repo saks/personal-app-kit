@@ -1,6 +1,6 @@
 # personal-app-kit
 
-Shared Rust crates for [octo-budget-rs](https://github.com/saks/octo-budget-rs) and [sickness_tracker](https://github.com/saks/sickness_tracker). Both apps are Rust, Tauri 2, Yew, Tailwind + daisyUI 5, Turso sync and Android. This kit holds the infrastructure they share (build helpers, identity config, and later sync types, theming, DB helpers and UI primitives) so a fix lands once instead of being copied. Domain code (records, budgets, doses, medications) stays in each app.
+Shared Rust crates for [octo-budget-rs](https://github.com/saks/octo-budget-rs) and [sickness_tracker](https://github.com/saks/sickness_tracker). Both apps are Rust, Tauri 2, Yew, Tailwind + daisyUI 5, Turso sync and Android. This kit holds the infrastructure they share (build helpers, identity config, sync types, theming, and later DB helpers and UI primitives) so a fix lands once instead of being copied. Domain code (records, budgets, doses, medications) stays in each app.
 
 Plan and decisions: [sickness_tracker#87](https://github.com/saks/sickness_tracker/issues/87).
 
@@ -12,6 +12,7 @@ Plan and decisions: [sickness_tracker#87](https://github.com/saks/sickness_track
 | `kit-build` | build-dependency | `emit_git_info(&EnvPrefix)`: sets `<PREFIX>_GIT_SHA` and `<PREFIX>_BUILT_AT` for `env!` |
 | `kit-db` | host only (empty on wasm) | Turso helpers: sea-query `build`/`query`/`execute`, `with_transaction`, row readers, Mozilla CA bundle, `<PREFIX>_DATA_DIR`/`_DB_PATH`/`_CLOCK` overrides, `tursodb` lookup, `UtcMillis`. No schema or DDL |
 | `kit-theme` | host + wasm (`yew` feature) | Shared daisyUI theme set: `ThemePrefs`/`Theme` enums, `ThemeProvider` + `use_theme` (feature `yew`, persistence via `ThemeApi`, mirror keys from `StoragePrefix`), `css/themes.css`, `js/theme-boot.js` |
+| `kit-sync-types` | host + wasm | Plain sync types both engines share: `SyncTrigger`, `FailureClass` + `FailureKind`, `SyncSkip`, `SyncBadge` + `badge(BadgeInput, BadgePolicy)`, `SyncUrl` / `AuthToken` (parsed once, token redacted). No engine, no built-in URLs |
 
 Every directory under `crates/` is a workspace member. Nothing app-specific is baked into a crate: URLs, env-var prefixes, log tags, storage keys and timings are typed config the app passes in.
 
