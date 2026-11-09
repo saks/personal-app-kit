@@ -16,6 +16,7 @@ repository = "https://github.com/saks/personal-app-kit"
 [workspace.dependencies]
 kit-core = { path = "crates/kit-core" }
 chrono = { version = "0.4", default-features = false, features = ["now"] }
+yew = { version = "0.23", default-features = false }
 
 [workspace.lints.rust]
 # `forbid` makes `#[allow(dead_code)]` and `#[expect(dead_code)]` hard errors.

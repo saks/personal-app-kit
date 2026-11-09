@@ -1,0 +1,13 @@
+/* Throwaway kit CSS (sickness_tracker#90). `@plugin "daisyui-theme"` is a
+   placeholder: the app's resolver rewrites it to the app's own
+   daisyui-theme.mjs, so the kit never ships or guesses a plugin path. */
+@plugin "daisyui-theme" {
+  name: "kitSpike";
+  color-scheme: light;
+  --color-base-100: #fdf6e3;
+  --color-base-content: #073642;
+  --color-accent: #d33682;
+  --color-accent-content: #ffffff;
+  --color-warning: #b58900;
+  --color-warning-content: #ffffff;
+}
