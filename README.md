@@ -10,6 +10,7 @@ Plan and decisions: [sickness_tracker#87](https://github.com/saks/sickness_track
 |---|---|---|
 | `kit-core` | host + wasm | App identity newtypes, parsed once: `EnvPrefix`, `LogTag`, `StoragePrefix` |
 | `kit-build` | build-dependency | `emit_git_info(&EnvPrefix)`: sets `<PREFIX>_GIT_SHA` and `<PREFIX>_BUILT_AT` for `env!` |
+| `kit-theme` | host + wasm (`yew` feature) | Shared daisyUI theme set: `ThemePrefs`/`Theme` enums, `ThemeProvider` + `use_theme` (feature `yew`, persistence via `ThemeApi`, mirror keys from `StoragePrefix`), `css/themes.css`, `js/theme-boot.js` |
 
 Every directory under `crates/` is a workspace member. Nothing app-specific is baked into a crate: URLs, env-var prefixes, log tags, storage keys and timings are typed config the app passes in.
 

@@ -1,0 +1,221 @@
+/* kit-theme: the shared daisyUI theme set (appLight, appDark, prismaLight,
+   prismaDark), the --tint-* utilities and the theme-generic Prisma overrides.
+   From sickness_tracker input.css (#45). Shipped through the app's
+   scripts/kit-css.sh (docs/tailwind-across-crates.md), which rewrites
+   `@plugin "daisyui-theme"` to the app's own daisyui-theme.mjs.
+   Overrides of app classes (dock, theme picker cards, join items) stay in each app. */
+
+@plugin "daisyui-theme" {
+  name: "appLight";
+  default: true;
+  color-scheme: light;
+
+  --color-base-100: #e6e9ee;
+  --color-base-200: #eef1f5;
+  --color-base-300: #d5dae3;
+  --color-base-content: #2a3544;
+  --color-primary: #3d6b74;
+  --color-primary-content: #f3f7f7;
+  --color-secondary: #5c6d80;
+  --color-secondary-content: #f3f5f7;
+  --color-accent: #b57a64;
+  --color-accent-content: #faf6f4;
+  --color-neutral: #3a4556;
+  --color-neutral-content: #e8edf2;
+  --color-info: #4d7388;
+  --color-info-content: #f3f7f8;
+  --color-success: #3f6b4c;
+  --color-success-content: #f3f8f4;
+  --color-warning: #80611f;
+  --color-warning-content: #fbf6ea;
+  --color-error: #9a4848;
+  --color-error-content: #faf4f4;
+
+  /* Tints for the bg-primary-tint etc. utilities: identical to the old 20% alpha classes. */
+  --tint-primary: color-mix(in oklab, var(--color-primary) 20%, transparent);
+  --tint-success: color-mix(in oklab, var(--color-success) 20%, transparent);
+  --tint-warning: color-mix(in oklab, var(--color-warning) 20%, transparent);
+  --tint-error: color-mix(in oklab, var(--color-error) 20%, transparent);
+
+  --radius-selector: 0.75rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@plugin "daisyui-theme" {
+  name: "appDark";
+  prefersdark: true;
+  color-scheme: dark;
+
+  --color-base-100: #1a2130;
+  --color-base-200: #242c3b;
+  --color-base-300: #2e384a;
+  --color-base-content: #d5dbe4;
+  --color-primary: #6a9aa3;
+  --color-primary-content: #102226;
+  --color-secondary: #8b98a8;
+  --color-secondary-content: #161c24;
+  --color-accent: #c9927c;
+  --color-accent-content: #2a1812;
+  --color-neutral: #121820;
+  --color-neutral-content: #d5dbe4;
+  --color-info: #7a9eb0;
+  --color-info-content: #101820;
+  --color-success: #7aa887;
+  --color-success-content: #101810;
+  --color-warning: #c4a86a;
+  --color-warning-content: #20180c;
+  --color-error: #e08a8a;
+  --color-error-content: #201010;
+
+  /* Tints for the bg-primary-tint etc. utilities: identical to the old 20% alpha classes. */
+  --tint-primary: color-mix(in oklab, var(--color-primary) 20%, transparent);
+  --tint-success: color-mix(in oklab, var(--color-success) 20%, transparent);
+  --tint-warning: color-mix(in oklab, var(--color-warning) 20%, transparent);
+  --tint-error: color-mix(in oklab, var(--color-error) 20%, transparent);
+
+  --radius-selector: 0.75rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+/* Prisma: opt-in palette pair, only reached through data-theme on <html>
+   (Settings → Appearance; src/theme.rs is the only Rust that sets it).
+   Palette: Gray #bbbbbb, White #eeeeee, Yellow #fff700, Senape #acc900,
+   Lime #96ff00, Green #00c900, Alga #00c99b, Aqua #00d8ff, Cyan #009cff,
+   Violet #9e91ff, Purple #bb66ff, Fuchsia #ff44cc, Magenta #ff2f6a,
+   Red #ff5050, Orange #ff6100, Ambra #ff9900. Contrast table and token map:
+   https://github.com/saks/sickness_tracker/issues/45 */
+@plugin "daisyui-theme" {
+  name: "prismaDark";
+  color-scheme: dark;
+
+  --color-base-100: #0f1112;
+  --color-base-200: #181a1c;
+  --color-base-300: #2a2f31;
+  --color-base-content: #eeeeee;
+  --color-primary: #00d8ff;
+  --color-primary-content: #00262e;
+  --color-secondary: #a396ff;
+  --color-secondary-content: #16123a;
+  --color-accent: #ff23c9;
+  --color-accent-content: #24001a;
+  --accent-fill: #ff23c9;
+  --accent-fill-content: #24001a;
+  --color-neutral: #050606;
+  --color-neutral-content: #eeeeee;
+  --color-info: #25aaff;
+  --color-info-content: #001a2e;
+  --color-success: #00c900;
+  --color-success-content: #002400;
+  --color-warning: #ff9900;
+  --color-warning-content: #2b1700;
+  --color-error: #ff5f5f;
+  --color-error-content: #2a0605;
+
+  /* Tints (bg-*-tint): palette swatches; error at 16% keeps badge text at AA. */
+  --tint-primary: color-mix(in oklab, #00d8ff 20%, transparent);
+  --tint-success: color-mix(in oklab, #00c900 20%, transparent);
+  --tint-warning: color-mix(in oklab, #ff9900 20%, transparent);
+  --tint-error: color-mix(in oklab, #ff5f5f 16%, transparent);
+
+  --radius-selector: 0.75rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@plugin "daisyui-theme" {
+  name: "prismaLight";
+  color-scheme: light;
+
+  --color-base-100: #eeeeee;
+  --color-base-200: #ffffff;
+  --color-base-300: #dfe0e1;
+  --color-base-content: #141618;
+  --color-primary: #005e78;
+  --color-primary-content: #ffffff;
+  --color-secondary: #574b9e;
+  --color-secondary-content: #ffffff;
+  --color-accent: #bd0093;
+  --color-accent-content: #ffffff;
+  --accent-fill: #ff23c9;
+  --accent-fill-content: #24001a;
+  --color-neutral: #141618;
+  --color-neutral-content: #eeeeee;
+  --color-info: #0056a3;
+  --color-info-content: #ffffff;
+  --color-success: #006500;
+  --color-success-content: #ffffff;
+  --color-warning: #8b4300;
+  --color-warning-content: #ffffff;
+  --color-error: #a70f1e;
+  --color-error-content: #ffffff;
+
+  /* Tints (bg-*-tint): bright swatches behind deep text (AA on white and #eeeeee). */
+  --tint-primary: color-mix(in oklab, #00d8ff 22%, transparent);
+  --tint-success: color-mix(in oklab, #96ff00 30%, transparent);
+  --tint-warning: color-mix(in oklab, #ff9900 22%, transparent);
+  --tint-error: color-mix(in oklab, #ff5050 18%, transparent);
+
+  --radius-selector: 0.75rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+/* Tint utilities: bg-primary-tint, bg-success-tint, bg-warning-tint,
+   bg-error-tint. Each theme block above sets --tint-*. */
+@theme inline {
+  --color-primary-tint: var(--tint-primary);
+  --color-success-tint: var(--tint-success);
+  --color-warning-tint: var(--tint-warning);
+  --color-error-tint: var(--tint-error);
+}
+
+/* Prisma Light: solid fills keep the bright swatch with dark ink (primary
+   action, warning and OK badges). Text, icons and tints use the deep tokens.
+   Soft alerts/badges mix with the white card colour, not the grey page. */
+[data-theme="prismaLight"] .btn-primary:not(.btn-soft, .btn-outline, .btn-dash, .btn-ghost, .btn-link) {
+  --btn-color: #00d8ff;
+  --btn-fg: #00262e;
+}
+[data-theme="prismaLight"] .btn-soft.btn-primary {
+  --btn-bg: var(--tint-primary);
+}
+[data-theme="prismaLight"] .btn-warning:not(.btn-soft, .btn-outline, .btn-dash, .btn-ghost, .btn-link) {
+  --btn-color: #ff9900;
+  --btn-fg: #2b1700;
+}
+[data-theme="prismaLight"] .badge-warning:not(.badge-soft, .badge-outline, .badge-dash, .badge-ghost) {
+  --badge-color: #ff9900;
+  --badge-fg: #2b1700;
+}
+[data-theme="prismaLight"] .badge-success:not(.badge-soft, .badge-outline, .badge-dash, .badge-ghost) {
+  --badge-color: #96ff00;
+  --badge-fg: #142400;
+}
+[data-theme="prismaLight"] .alert-soft {
+  background: color-mix(in oklab, var(--alert-color, var(--color-base-content)) 8%, var(--color-base-200));
+}
+[data-theme="prismaLight"] .badge-soft {
+  background-color: color-mix(in oklab, var(--badge-color, var(--color-base-content)) 10%, var(--color-base-200));
+}
