@@ -4,7 +4,7 @@ How an app's Tailwind v4.3.3 + daisyUI 5.7.47 build picks up class names, CSS an
 
 ## Decision
 
-Each app runs `scripts/kit-css.sh` (below) in its Trunk `pre_build` hook, after the daisyUI fetch and before `./tailwindcss`. It asks Cargo where each kit crate lives (`cargo metadata --locked`) and writes a gitignored `css/kit.generated.css` with an absolute `@source` per crate, plus the crate's shipped CSS. The app's `input.css` imports that file. No vendoring, no copying Rust sources, no npm.
+Each app runs `scripts/kit-css.sh` (below) in its Trunk `pre_build` hook, after the daisyUI fetch and before `./tailwindcss`. It asks Cargo where each kit crate lives (`cargo metadata --locked`) and writes a gitignored `css/kit.generated.css` with an absolute `@source` per crate, plus the crate's shipped CSS. The app's `input.css` imports that file. No vendoring, no copying Rust sources, no npm. The resolver does need `python3` on every build host (desktop, CI and the machine that runs the Android build); `make check` here and OB's `scripts/check-unit-tests.sh` already need it.
 
 Kit rules that make this work:
 
@@ -31,12 +31,12 @@ Kit rules that make this work:
 Generated `css/kit.generated.css` (one block per kit crate):
 
 ```css
-/* kit-spike 0.1.0 from git+https://github.com/saks/personal-app-kit?branch=...#13afc8a7... */
-@source "/home/<user>/.cargo/git/checkouts/personal-app-kit-<hash>/13afc8a/crates/kit-spike/src/**/*.rs";
+/* kit-theme 0.1.0 from git+https://github.com/saks/personal-app-kit?tag=v0.1.0#<rev> */
+@source "/home/<user>/.cargo/git/checkouts/personal-app-kit-<hash>/<short-rev>/crates/kit-theme/src/**/*.rs";
 
-/* kit-spike/css/spike.css */
+/* kit-theme/css/themes.css */
 @plugin "/abs/path/to/app/daisyui-theme.mjs" {
-  name: "kitSpike";
+  name: "appLight";
   ...
 }
 ```
@@ -79,7 +79,7 @@ Copy into the app and set `KIT_CRATES` to the kit crates whose classes, CSS or J
 # crate is missing from the dependency graph or resolves more than once.
 set -eu
 
-KIT_CRATES="kit-spike"
+KIT_CRATES="kit-theme"
 
 root="$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$root"
