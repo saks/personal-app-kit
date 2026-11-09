@@ -1,0 +1,5 @@
+# Same as both apps: stable Rust, plus the wasm target for the Yew UI.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]

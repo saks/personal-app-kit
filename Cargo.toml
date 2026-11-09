@@ -1,0 +1,28 @@
+[workspace]
+# Every directory under crates/ is a member, so adding a crate never edits this file.
+members = ["crates/*"]
+# Same resolver the apps get from their edition-2024 root packages.
+resolver = "3"
+
+[workspace.package]
+# One version for every kit crate. All crates release together under one tag (RELEASING.md).
+version = "0.1.0"
+edition = "2024"
+# Edition 2024 plus let-chains, which the apps' build.rs already uses.
+rust-version = "1.88"
+publish = false
+repository = "https://github.com/saks/personal-app-kit"
+
+[workspace.dependencies]
+kit-core = { path = "crates/kit-core" }
+chrono = { version = "0.4", default-features = false, features = ["now"] }
+
+[workspace.lints.rust]
+# `forbid` makes `#[allow(dead_code)]` and `#[expect(dead_code)]` hard errors.
+dead_code = "forbid"
+
+[workspace.lints.clippy]
+# No unwrap, expect or panic outside tests (clippy.toml allows them in tests).
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"

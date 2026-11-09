@@ -1,0 +1,15 @@
+[package]
+name = "kit-build"
+description = "Build-script helper: git SHA and build time as rustc env vars under an injected prefix."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+kit-core.workspace = true
+chrono.workspace = true
+
+[lints]
+workspace = true

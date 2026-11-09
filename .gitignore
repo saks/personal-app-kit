@@ -1,0 +1,12 @@
+/target/
+.env
+**/.env
+.env.*
+**/.env.*
+!.env.example
+!**/.env.example
+*.db
+*.db-*
+*.jks
+*.keystore
+.vscode
