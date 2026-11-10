@@ -32,7 +32,8 @@ pub extern "system" fn Java_com_saksmlz_kit_android_SyncWorker_runSync<'local>(
         Outcome::Err(err) => Err(NoDataDir::Unreadable(err.to_string())),
         Outcome::Panic(_) => Err(NoDataDir::Panicked),
     };
-    worker::run(&registered(), data_dir).code()
+    // `registered` runs inside the worker's `catch_unwind`.
+    worker::run(registered, data_dir).code()
 }
 
 /// `SyncWorker.enqueue(..)`: one network-constrained job, replacing any

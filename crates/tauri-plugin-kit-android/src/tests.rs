@@ -10,8 +10,8 @@ use crate::{BackgroundSync, Schedule, WorkerResult};
 fn kit_test_job() -> BackgroundSync {
     BackgroundSync {
         run: |_: &Path| WorkerResult::Success,
-        lib_name: "kit_test_lib".parse().unwrap(),
-        log_tag: "kit-test".parse().unwrap(),
+        lib_name: crate::lib_name!("kit_test_lib"),
+        log_tag: kit_core::log_tag!("kit-test"),
         schedule: Schedule {
             initial_delay: Duration::from_secs(10),
             backoff: Duration::from_secs(30),

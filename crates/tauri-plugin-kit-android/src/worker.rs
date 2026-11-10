@@ -16,10 +16,21 @@ pub(crate) enum NoDataDir {
     Panicked,
 }
 
-/// Run the app's job in `data_dir`. A missing data dir or a panic in the
-/// app's run becomes a retry: a panic must not cross into Java. (Release
-/// builds that abort on panic die instead, and WorkManager reschedules.)
-pub(crate) fn run(job: &BackgroundSync, data_dir: Result<String, NoDataDir>) -> WorkerResult {
+/// Get the app's job from `registered` and run it in `data_dir`. A missing
+/// data dir, or a panic in the app's registration or its run, becomes a
+/// retry: a panic must not cross into Java. (Release builds that abort on
+/// panic die instead, and WorkManager reschedules.)
+pub(crate) fn run(
+    registered: fn() -> BackgroundSync,
+    data_dir: Result<String, NoDataDir>,
+) -> WorkerResult {
+    std::panic::catch_unwind(|| run_registered(registered(), data_dir)).unwrap_or_else(|_| {
+        warn!("sync: background job panicked; WorkManager retries");
+        WorkerResult::Retry
+    })
+}
+
+fn run_registered(job: BackgroundSync, data_dir: Result<String, NoDataDir>) -> WorkerResult {
     let data_dir = match data_dir {
         Ok(dir) => dir,
         Err(NoDataDir::Unreadable(err)) => {
@@ -31,11 +42,7 @@ pub(crate) fn run(job: &BackgroundSync, data_dir: Result<String, NoDataDir>) -> 
             return WorkerResult::Retry;
         }
     };
-    let run = job.run;
-    std::panic::catch_unwind(|| run(Path::new(&data_dir))).unwrap_or_else(|_| {
-        warn!("sync: background job panicked; WorkManager retries");
-        WorkerResult::Retry
-    })
+    (job.run)(Path::new(&data_dir))
 }
 
 #[cfg(test)]

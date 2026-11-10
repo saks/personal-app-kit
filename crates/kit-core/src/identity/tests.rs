@@ -143,3 +143,75 @@ fn errors_read_well() {
         "storage prefix has '-' at position 3, which is not allowed there"
     );
 }
+
+#[test]
+fn literal_matches_parse() {
+    let cases = [
+        "",
+        "octobudget",
+        "sickness-tracker",
+        "a.b_c",
+        "-tag",
+        "tag-",
+        "my tag",
+        "tåg",
+        "t🦀g",
+        "SICKNESS_TRACKER",
+        "APP_",
+        "app-",
+        "Octobudget",
+    ];
+    for s in cases {
+        assert_eq!(
+            LogTag::literal(s).map(LogTag::from_literal),
+            s.parse::<LogTag>(),
+            "{s:?}"
+        );
+        assert_eq!(
+            EnvPrefix::literal(s).map(EnvPrefix::from_literal),
+            s.parse::<EnvPrefix>(),
+            "{s:?}"
+        );
+        assert_eq!(
+            StoragePrefix::literal(s).map(StoragePrefix::from_literal),
+            s.parse::<StoragePrefix>(),
+            "{s:?}"
+        );
+    }
+    let long = "t".repeat(24);
+    assert_eq!(
+        LogTag::literal(long.leak()),
+        Err(ParseIdentityError::TooLong {
+            kind: IdentityKind::LogTag,
+            max: 23,
+            len: 24
+        })
+    );
+}
+
+#[test]
+fn non_ascii_is_reported_as_the_char() {
+    assert_eq!(
+        LogTag::literal("t🦀g"),
+        Err(ParseIdentityError::InvalidChar {
+            kind: IdentityKind::LogTag,
+            at: 1,
+            ch: '🦀'
+        })
+    );
+    assert_eq!(
+        "ta€".parse::<LogTag>(),
+        Err(ParseIdentityError::InvalidChar {
+            kind: IdentityKind::LogTag,
+            at: 2,
+            ch: '€'
+        })
+    );
+}
+
+#[test]
+fn the_macro_checks_at_compile_time() {
+    const TAG: LogTag = crate::log_tag!("kit-test");
+    assert_eq!(TAG, "kit-test".parse().unwrap());
+    assert_eq!(crate::log_tag!("a.b_c").as_str(), "a.b_c");
+}
