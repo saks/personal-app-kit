@@ -1,6 +1,8 @@
 use kit_core::StoragePrefix;
 
-use super::{BOOT_JS, MirrorKeys, Shade, THEMES_CSS, Theme, ThemeFamily, ThemeMode, ThemePrefs};
+use super::{
+    BOOT_JS, MirrorKeys, PICKER_CSS, Shade, THEMES_CSS, Theme, ThemeFamily, ThemeMode, ThemePrefs,
+};
 
 fn prefix() -> StoragePrefix {
     "my-app".parse().unwrap()
@@ -74,9 +76,12 @@ fn every_family_and_shade_has_a_theme_block_in_the_css() {
 }
 
 #[test]
-fn the_css_ships_the_component_accents_and_keeps_picker_cards_out() {
+fn the_css_ships_the_component_accents_and_picker_cards_ship_apart() {
     for component in [".dock .dock-active", ".join-item.btn-primary"] {
         assert!(THEMES_CSS.contains(component), "{component}");
     }
     assert!(!THEMES_CSS.contains(".theme-option"));
+    for rule in [".theme-option:has(:checked)", ".theme-option .radio"] {
+        assert!(PICKER_CSS.contains(rule), "{rule}");
+    }
 }

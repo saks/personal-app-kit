@@ -4,7 +4,8 @@
    scripts/kit-css.sh (docs/tailwind-across-crates.md), which rewrites
    `@plugin "daisyui-theme"` to the app's own daisyui-theme.mjs.
    The Prisma accent rules on daisyUI components (.dock, .dock-active,
-   .join-item) ship here; the picker-card rules stay in each app. */
+   .join-item) ship here; the picker-card rules ship in
+   css/appearance-picker.css with the AppearancePicker. */
 
 @plugin "daisyui-theme" {
   name: "appLight";
