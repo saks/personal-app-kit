@@ -1,0 +1,10 @@
+/* kit-theme: AppearancePicker card rules (from sickness_tracker input.css).
+   Shipped through the app's scripts/kit-css.sh with css/themes.css. */
+
+/* Prisma accent on the Settings → Appearance cards (AppearancePicker). */
+:is([data-theme="prismaDark"], [data-theme="prismaLight"]) .theme-option:has(:checked) {
+  border-color: var(--color-accent);
+}
+:is([data-theme="prismaDark"], [data-theme="prismaLight"]) .theme-option .radio {
+  --input-color: var(--color-accent);
+}

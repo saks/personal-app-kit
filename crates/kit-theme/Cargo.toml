@@ -9,7 +9,8 @@ repository.workspace = true
 
 [features]
 default = []
-# ThemeProvider, use_theme, data-theme apply, localStorage mirror, SystemBars.
+# ThemeProvider, use_theme, data-theme apply, localStorage mirror, SystemBars,
+# AppearancePicker.
 yew = ["dep:yew", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:web-sys", "dep:js-sys"]
 
 [dependencies]
@@ -23,6 +24,9 @@ js-sys = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+# Renders AppearancePicker markup to a string in host tests.
+yew = { workspace = true, features = ["ssr"] }
+futures = { workspace = true }
 
 [lints]
 workspace = true
