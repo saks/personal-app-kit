@@ -110,14 +110,13 @@ impl Admission {
     }
 }
 
-/// Ownership of the running flight. Dropping it ends the flight, so the
-/// slot cannot stay running.
+/// Ownership of the running flight.
 ///
 /// # Dropping
 ///
-/// Dropping a `Flight` (a finished drain, a panic, an aborted task, an early
-/// return, `let _ =`, or `matches!(…, Start(_))`, which looks like a check)
-/// sets the flight idle and drops the queued trigger. A background job holds
+/// Dropping a `Flight` (a panic, an aborted task, an early return, `let _ =`,
+/// or `matches!(…, Start(_))`, which looks like a check) sets the flight idle
+/// and drops the queued trigger. A background job holds
 /// the `Flight` across [`crate::run`] and [`Flight::next_queued`], and keeps
 /// calling `next_queued` after a failed run:
 ///
