@@ -52,6 +52,12 @@ pub fn schedule_after_write<H: Host>(host: &H) {
 
 /// The app is paused: drop the write timer and `Flush` if anything is
 /// pending.
+///
+/// The pending check runs inside the kit and has no hook, so an app cannot
+/// act on its answer. octo-budget-rs enqueued its Android background job only
+/// when something was pending (saks/octo-budget-rs#149): with this function
+/// it either calls [`Host::pending`] itself before enqueueing (one more
+/// count) or enqueues unconditionally (the job then finds nothing pending).
 pub fn on_suspended<H: Host>(host: &H) {
     let Some(auto) = active(host) else { return };
     auto.write_timer.cancel();
@@ -67,7 +73,9 @@ pub fn on_suspended<H: Host>(host: &H) {
 /// The process is about to exit: drop the write timer and push what is
 /// pending, within [`crate::SyncPolicy::exit_budget`]. Does nothing when
 /// automatic runs are off. The app blocks on it (for example in its exit
-/// event) and exits either way.
+/// event) and exits either way. An engine follow-up after this run
+/// ([`Host::wants_follow_up`]) is skipped: no flight starts during shutdown,
+/// and what is left stays queued for the next launch.
 pub async fn flush_before_exit<H: Host>(host: &H) -> Result<(), BudgetExceeded> {
     let Some(auto) = active(host) else {
         return Ok(());

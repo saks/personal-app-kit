@@ -108,7 +108,8 @@ pub struct Flight {
 impl Flight {
     /// Call when a run ends: the queued trigger to run next, keeping the
     /// flight, or `None`, ending it. Ends the flight when automatic runs are
-    /// off or after [`crate::SyncPolicy::max_follow_ups`] queued runs.
+    /// off or after [`crate::SyncPolicy::max_follow_ups`] queued runs; the
+    /// queued trigger is then dropped until the next event.
     pub fn next_queued(&mut self) -> Option<SyncTrigger> {
         let shared = self.shared.take()?;
         let next = {

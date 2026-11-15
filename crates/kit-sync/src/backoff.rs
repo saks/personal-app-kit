@@ -21,7 +21,9 @@ impl Jitter {
     /// No change to the delay.
     pub const NONE: Self = Self(0.0);
 
-    /// Clamped to ±[`Spread::MAX`]; NaN is no jitter.
+    /// Clamped to ±[`Spread::MAX`] (±50 %); NaN is no jitter. This is only
+    /// the outer limit: [`crate::SyncPolicy::retry_delay`] then bounds it to
+    /// the policy's spread ([`Spread::DEFAULT`], ±20 %, unless changed).
     pub fn new(fraction: f64) -> Self {
         if fraction.is_nan() {
             Self::NONE

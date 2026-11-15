@@ -641,6 +641,30 @@ async fn an_aborted_run_leaves_the_flight_idle() {
     assert!(host.auto().shared.idle(), "not stuck at Running");
 }
 
+/// Dropping the runtime aborts every task on it, including the `drive` task
+/// that `request` spawned and that owns the flight (the test never holds it).
+#[test]
+fn an_aborted_drive_task_leaves_the_flight_idle() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .start_paused(true)
+        .build()
+        .expect("runtime");
+    let host = rt.block_on(async {
+        let host = Fake::new(Mode::On, Gate::Ready, Behavior::Hang);
+        schedule_after_write(&host);
+        advance(2_000).await;
+        host
+    });
+    assert_eq!(host.started(), vec![SyncTrigger::Write]);
+    assert!(
+        !host.auto().shared.idle(),
+        "the drive task holds the flight"
+    );
+    drop(rt);
+    assert!(host.auto().shared.idle(), "not stuck at Running");
+}
+
 // --- Added from ST (3): an engine-requested follow-up. ---
 
 #[tokio::test(start_paused = true)]
@@ -688,9 +712,53 @@ async fn a_manual_run_leaving_rows_behind_queues_one_automatic_run() {
     advance(1_000).await;
     assert_eq!(
         host.started(),
-        vec![SyncTrigger::Manual, SyncTrigger::Manual]
+        vec![SyncTrigger::Manual, SyncTrigger::Write],
+        "the follow-up is automatic, not a second Manual start"
     );
     assert!(host.auto().shared.idle());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_manual_runs_follow_up_failing_offline_arms_a_retry() {
+    let host = Fake::ready();
+    host.0
+        .leave_behind
+        .store(1, std::sync::atomic::Ordering::SeqCst);
+    run(&host, SyncTrigger::Manual).await.expect("manual");
+    // The follow-up is spawned but has not run yet (one-thread runtime).
+    host.behave(Behavior::Offline);
+    advance(1_000).await;
+    assert_eq!(
+        host.finished().last(),
+        Some(&Seen::Failed(
+            SyncTrigger::Write,
+            FailureClass::ClearsByItself,
+            FakeError::Offline
+        ))
+    );
+    assert_eq!(host.auto().failures(), 1);
+    assert!(host.auto().scheduled(), "the retry is armed");
+    host.set_pending(1);
+    host.behave(Behavior::Succeed {
+        takes: Duration::ZERO,
+    });
+    advance(10_000).await;
+    assert_eq!(
+        host.started(),
+        vec![SyncTrigger::Manual, SyncTrigger::Write, SyncTrigger::Retry]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_exit_flush_queues_no_follow_up() {
+    let host = Fake::ready();
+    host.0
+        .leave_behind
+        .store(1, std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(flush_before_exit(&host).await, Ok(()));
+    advance(10_000).await;
+    assert_eq!(host.started(), vec![SyncTrigger::Exit]);
+    assert!(host.auto().shared.idle(), "no flight during shutdown");
 }
 
 #[tokio::test(start_paused = true)]
