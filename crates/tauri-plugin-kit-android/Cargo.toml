@@ -10,18 +10,23 @@ repository.workspace = true
 # and adds `android/` to the app's Gradle build.
 links = "tauri-plugin-kit-android"
 
-[dependencies]
+# Each dependency sits under the cfg its code compiles for (see `src/lib.rs`),
+# so no target builds one it doesn't use.
+# `config` (LogTag, const_str): every target but wasm32.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 kit-core = { workspace = true }
-tracing = { workspace = true }
 
+# The worker side (`jni_glue`, `worker`): Android only in normal builds.
 [target.'cfg(target_os = "android")'.dependencies]
 jni = { workspace = true }
 ndk-context = { workspace = true }
+tracing = { workspace = true }
 
 # Host tests compile the JNI glue (OB's `cfg(any(target_os = "android", test))`).
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 jni = { workspace = true }
 ndk-context = { workspace = true }
+tracing = { workspace = true }
 
 [lints]
 workspace = true
