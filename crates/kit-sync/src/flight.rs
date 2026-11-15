@@ -87,8 +87,11 @@ impl Shared {
 }
 
 /// The answer to [`crate::AutoSync::admit`].
+///
+/// Dropping a started [`Flight`] ends it and drops any queued run. See
+/// [Dropping](Flight#dropping).
 #[derive(Debug)]
-#[must_use = "dropping a started Flight ends it at once"]
+#[must_use = "dropping a started Flight ends the flight and drops any queued run"]
 pub enum Admission {
     /// The flight was idle: the caller owns it now and runs.
     Start(Flight),
@@ -96,9 +99,46 @@ pub enum Admission {
     Joined,
 }
 
-/// Ownership of the running flight. Dropping it (a finished drain, a panic,
-/// an aborted task) sets the flight idle, so it can never stay running.
+impl Admission {
+    /// The [`Flight`] when this call started it. `None` when a run is already
+    /// in flight (this trigger joined the queued one).
+    pub fn into_flight(self) -> Option<Flight> {
+        match self {
+            Self::Start(flight) => Some(flight),
+            Self::Joined => None,
+        }
+    }
+}
+
+/// Ownership of the running flight.
+///
+/// # Dropping
+///
+/// Dropping a `Flight` (a panic, an aborted task, an early return, `let _ =`,
+/// or `matches!(…, Start(_))`, which looks like a check) sets the flight idle
+/// and drops the queued trigger. A background job holds
+/// the `Flight` across [`crate::run`] and [`Flight::next_queued`], and keeps
+/// calling `next_queued` after a failed run:
+///
+/// ```no_run
+/// # use kit_sync::{AutoSync, Host, run};
+/// # use kit_sync_types::SyncTrigger;
+/// # async fn job<H: Host>(host: &H, auto: &AutoSync, mut trigger: SyncTrigger) {
+/// let Some(mut flight) = auto.admit(trigger).into_flight() else {
+///     return;
+/// };
+/// loop {
+///     // `run` already emits the outcome. Returning here would drop `flight`.
+///     let _ = run(host, trigger).await;
+///     match flight.next_queued() {
+///         Some(next) => trigger = next,
+///         None => break,
+///     }
+/// }
+/// # }
+/// ```
 #[derive(Debug)]
+#[must_use = "dropping a Flight ends the flight and drops any queued run"]
 pub struct Flight {
     /// `None` once the flight has ended.
     shared: Option<Arc<Shared>>,

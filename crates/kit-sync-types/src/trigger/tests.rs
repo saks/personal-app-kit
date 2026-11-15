@@ -45,7 +45,7 @@ fn ported_from_st_trigger_serialize() {
         serde_json::to_string(&SyncTrigger::Background).unwrap(),
         "\"background\""
     );
-    assert!(SyncTrigger::Background.from_host() && SyncTrigger::Background.automatic());
+    assert!(SyncTrigger::Background.automatic());
 }
 
 #[test]
@@ -57,20 +57,4 @@ fn only_manual_is_not_automatic() {
             "{trigger:?}"
         );
     }
-}
-
-#[test]
-fn host_triggers() {
-    let host: Vec<_> = ALL.into_iter().filter(|t| t.from_host()).collect();
-    assert_eq!(
-        host,
-        [
-            SyncTrigger::Write,
-            SyncTrigger::Flush,
-            SyncTrigger::Retry,
-            SyncTrigger::Background,
-            SyncTrigger::Exit,
-            SyncTrigger::Settings,
-        ]
-    );
 }

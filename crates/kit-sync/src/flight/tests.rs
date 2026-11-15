@@ -9,10 +9,9 @@ fn shared(max_follow_ups: u32) -> Arc<Shared> {
 }
 
 fn start(shared: &Arc<Shared>) -> Flight {
-    match Shared::admit(shared, SyncTrigger::Write) {
-        Admission::Start(flight) => flight,
-        Admission::Joined => panic!("expected an idle flight"),
-    }
+    Shared::admit(shared, SyncTrigger::Write)
+        .into_flight()
+        .expect("expected an idle flight")
 }
 
 #[test]
@@ -75,6 +74,23 @@ fn a_dropped_flight_ends() {
     assert!(!shared.idle());
     drop(flight);
     assert!(shared.idle());
+}
+
+#[test]
+fn dropping_a_flight_drops_the_queued_trigger() {
+    // Documented behaviour: drop ends the flight and drops what was queued.
+    let shared = shared(5);
+    let flight = start(&shared);
+    assert!(matches!(
+        Shared::admit(&shared, SyncTrigger::Flush),
+        Admission::Joined
+    ));
+    drop(flight);
+    assert!(shared.idle(), "queued Flush is gone");
+    let new = Shared::admit(&shared, SyncTrigger::Write)
+        .into_flight()
+        .expect("a new flight, not the dropped Flush");
+    drop(new);
 }
 
 #[test]

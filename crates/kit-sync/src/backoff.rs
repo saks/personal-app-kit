@@ -104,7 +104,7 @@ impl Backoff {
         }
     }
 
-    pub(crate) fn failures(&self) -> u32 {
+    pub(crate) fn backoff_attempts(&self) -> u32 {
         match &*lock(&self.0) {
             Retry::Off => 0,
             Retry::Armed { failures, .. } => failures.get(),

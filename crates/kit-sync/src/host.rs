@@ -38,6 +38,20 @@ pub trait Host: Clone + Send + Sync + 'static {
     fn wants_follow_up(&self, _report: &Self::Report) -> bool {
         false
     }
+
+    /// The app was paused and the kit counted what is unpushed. Called once
+    /// per [`crate::on_suspended`], after the count and before any `Flush` is
+    /// requested. `pending` is the count, or `Err` when it failed (the kit
+    /// flushes anyway). Use it to enqueue a background job only when there
+    /// is work.
+    ///
+    /// Runs on the scheduler runtime, inside the task `on_suspended` spawned,
+    /// not on the caller's stack. Not called when automatic runs are inactive
+    /// ([`crate::AutoSync::active`] is false): `on_suspended` returns before
+    /// the count. An app that wants a background job then decides that itself.
+    fn suspended(&self, pending: Result<u64, &Self::Error>) {
+        let _ = pending;
+    }
 }
 
 /// A run starting or finishing, borrowed from [`crate::run`].
