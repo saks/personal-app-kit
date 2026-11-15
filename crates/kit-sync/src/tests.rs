@@ -8,7 +8,7 @@ use std::time::Duration;
 use kit_sync_types::{FailureClass, SyncTrigger};
 use tokio::time::Instant;
 
-use self::fake::{Behavior, Fake, FakeError, Report, Seen, advance, offline};
+use self::fake::{Behavior, Fake, FakeError, Mark, Report, Seen, advance, offline};
 use crate::*;
 
 fn synced(trigger: SyncTrigger, local_changes: u64) -> Seen {
@@ -125,6 +125,11 @@ async fn suspend_drops_the_write_timer_and_flushes() {
     assert_eq!(host.started(), vec![SyncTrigger::Flush]);
     assert_eq!(host.suspended_calls(), vec![Ok(1)]);
     assert_eq!(host.pending_calls(), 1);
+    assert_eq!(
+        host.marks(),
+        vec![Mark::Suspended(Ok(1)), Mark::Started(SyncTrigger::Flush)],
+        "suspended runs before Flush starts"
+    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -136,6 +141,14 @@ async fn suspend_flushes_when_the_count_fails() {
     assert_eq!(host.started(), vec![SyncTrigger::Flush]);
     assert_eq!(host.suspended_calls(), vec![Err(FakeError::Offline)]);
     assert_eq!(host.pending_calls(), 1);
+    assert_eq!(
+        host.marks(),
+        vec![
+            Mark::Suspended(Err(FakeError::Offline)),
+            Mark::Started(SyncTrigger::Flush)
+        ],
+        "suspended runs before Flush starts"
+    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -822,9 +835,17 @@ async fn the_default_host_never_asks_for_a_follow_up() {
     schedule_after_write(&host);
     advance(10_000).await;
     assert_eq!(fake.started(), vec![SyncTrigger::Write]);
+    fake.set_pending(1);
+    on_suspended(&host);
+    advance(1_000).await;
+    assert_eq!(
+        fake.started(),
+        vec![SyncTrigger::Write, SyncTrigger::Flush],
+        "the default suspended hook still flushes"
+    );
 }
 
-// --- Added from ST (4): backoff_attempts() and scheduled(). ---
+// --- Added from ST (4): failures (now backoff_attempts()) and scheduled(). ---
 
 #[tokio::test(start_paused = true)]
 async fn status_queries_track_arm_fire_and_reset() {

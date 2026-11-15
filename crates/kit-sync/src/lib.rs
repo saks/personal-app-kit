@@ -3,7 +3,7 @@
 //! A port of octo-budget-rs `autosync` (main `2ebfd24`) with the app parts
 //! left out, plus four pieces from sickness_tracker: the follow-up cap, a
 //! flight that ends on drop or panic, an engine-requested follow-up, and the
-//! public `backoff_attempts` / `scheduled` queries.
+//! public `failures` (now `backoff_attempts`) / `scheduled` queries.
 //!
 //! - `AutoSync`: the scheduler state one app holds (single flight, write
 //!   timer, debounce, backoff, gate) and the `SyncPolicy` it runs with.
@@ -119,9 +119,11 @@ impl AutoSync {
     /// It is `0` after the backoff is reset:
     /// - [`schedule_after_write`], while automatic runs are active (reset
     ///   when the write is scheduled);
-    /// - [`on_resumed`], while automatic runs are active (`Auto` due: stays
-    ///   `0`; `Auto` debounced and a retry was armed: stored as `1` again,
-    ///   the first step);
+    /// - [`on_resumed`] (and [`on_first_load`], which calls it once), while
+    ///   automatic runs are active. The count is reset to `0` before `Auto`
+    ///   runs. When `Auto` is debounced and a retry delay is still stored
+    ///   (`retrying`, including a retry that already fired), it is stored as
+    ///   `1` again, the first step;
     /// - [`on_online`], while automatic runs are active;
     /// - [`settings_saved`], whenever the scheduler exists;
     /// - a successful [`run`], including Manual;

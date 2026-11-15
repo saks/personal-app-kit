@@ -54,6 +54,12 @@ pub(super) enum Seen {
     Failed(SyncTrigger, FailureClass, FakeError),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum Mark {
+    Suspended(Result<u64, FakeError>),
+    Started(SyncTrigger),
+}
+
 pub(super) struct FakeInner {
     pub(super) auto: AutoSync,
     pub(super) behavior: Mutex<Behavior>,
@@ -67,6 +73,7 @@ pub(super) struct FakeInner {
     /// How many of the next successful runs report rows left behind.
     pub(super) leave_behind: AtomicU64,
     events: Mutex<Vec<Seen>>,
+    marks: Mutex<Vec<Mark>>,
     /// When locked, `pending` and `sync` wait: stands in for the engine lock.
     pub(super) hold: Arc<AsyncMutex<()>>,
 }
@@ -99,6 +106,7 @@ impl Fake {
             suspended: Mutex::new(Vec::new()),
             leave_behind: AtomicU64::new(0),
             events: Mutex::new(Vec::new()),
+            marks: Mutex::new(Vec::new()),
             hold: Arc::new(AsyncMutex::new(())),
         }))
     }
@@ -149,6 +157,10 @@ impl Fake {
 
     pub(super) fn suspended_calls(&self) -> Vec<Result<u64, FakeError>> {
         lock(&self.0.suspended).clone()
+    }
+
+    pub(super) fn marks(&self) -> Vec<Mark> {
+        lock(&self.0.marks).clone()
     }
 
     pub(super) fn started(&self) -> Vec<SyncTrigger> {
@@ -223,6 +235,9 @@ impl Host for Fake {
                 outcome: Outcome::Failed { class, error },
             } => Seen::Failed(*trigger, *class, **error),
         };
+        if let Seen::Started(trigger) = seen {
+            lock(&self.0.marks).push(Mark::Started(trigger));
+        }
         lock(&self.0.events).push(seen);
     }
 
@@ -238,7 +253,9 @@ impl Host for Fake {
     }
 
     fn suspended(&self, pending: Result<u64, &FakeError>) {
-        lock(&self.0.suspended).push(pending.map_err(|error| *error));
+        let pending = pending.map_err(|error| *error);
+        lock(&self.0.suspended).push(pending);
+        lock(&self.0.marks).push(Mark::Suspended(pending));
     }
 }
 

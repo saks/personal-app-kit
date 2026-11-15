@@ -88,16 +88,10 @@ impl Shared {
 
 /// The answer to [`crate::AutoSync::admit`].
 ///
-/// # Dropping
-///
-/// Dropping a [`Flight`] (a panic, an early return, `let _ =`, or
-/// `matches!(…, Start(_))`) sets the flight idle and drops the queued
-/// trigger. A background job holds it across [`crate::run`] and
-/// [`Flight::next_queued`]:
-/// `let Some(flight) = auto.admit(t).into_flight() else { … }`.
-/// `matches!(…, Start(_))` looks like a check and drops the flight.
+/// Dropping a started [`Flight`] ends it and drops any queued run. See
+/// [Dropping](Flight#dropping).
 #[derive(Debug)]
-#[must_use = "dropping a started Flight ends it at once"]
+#[must_use = "dropping a started Flight ends the flight and drops any queued run"]
 pub enum Admission {
     /// The flight was idle: the caller owns it now and runs.
     Start(Flight),
@@ -124,8 +118,18 @@ impl Admission {
 /// Dropping a `Flight` (a panic, an early return, `let _ =`, or
 /// `matches!(…, Start(_))`) sets the flight idle and drops the queued
 /// trigger. A background job holds it across [`crate::run`] and
-/// [`Flight::next_queued`]:
-/// `let Some(flight) = auto.admit(t).into_flight() else { … }`.
+/// [`Flight::next_queued`].
+///
+/// ```ignore
+/// let Some(mut flight) = auto.admit(trigger).into_flight() else {
+///     return;
+/// };
+/// run(host, trigger).await?;
+/// while let Some(next) = flight.next_queued() {
+///     run(host, next).await?;
+/// }
+/// ```
+///
 /// `matches!(…, Start(_))` looks like a check and drops the flight.
 #[derive(Debug)]
 #[must_use = "dropping a Flight ends the flight and drops any queued run"]
