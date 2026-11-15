@@ -133,14 +133,6 @@ impl AutoSync {
         self.backoff.backoff_attempts()
     }
 
-    /// Automatic failures in a row behind the armed backoff; 0 when none.
-    ///
-    /// Use [`Self::backoff_attempts`]. This is not a UI failure streak.
-    #[deprecated(note = "use backoff_attempts(); not a UI failure streak")]
-    pub fn failures(&self) -> u32 {
-        self.backoff_attempts()
-    }
-
     /// The host will sync by itself: a write timer or a retry is armed and
     /// has not fired yet.
     pub fn scheduled(&self) -> bool {

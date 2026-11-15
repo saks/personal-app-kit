@@ -43,30 +43,7 @@ impl SyncTrigger {
             | Self::Settings => true,
         }
     }
-
-    /// Started by the host, so no UI call gets its result.
-    ///
-    /// This is the reference (sickness_tracker) routing rule, where `Auto`
-    /// and `Online` are started by a UI call and their results return to it.
-    /// An app that starts `Auto` or `Online` from the host must not use it:
-    /// octo-budget-rs does (`autosync.rs` `on_resumed` / `on_online`), and so
-    /// does kit-sync's scheduler.
-    #[deprecated(
-        note = "sickness_tracker-specific routing; wrong for apps that start Auto/Online from the host. Keep this rule in the app."
-    )]
-    pub fn from_host(self) -> bool {
-        match self {
-            Self::Write
-            | Self::Flush
-            | Self::Retry
-            | Self::Background
-            | Self::Exit
-            | Self::Settings => true,
-            Self::Auto | Self::Manual | Self::Online => false,
-        }
-    }
 }
 
 #[cfg(test)]
-#[allow(deprecated)] // pins from_host until the next breaking release
 mod tests;
