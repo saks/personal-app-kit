@@ -20,7 +20,9 @@ pub struct SyncPolicy {
     /// Random spread around each retry delay.
     pub jitter: Spread,
     /// Queued runs one flight may chain before it lets go (only reached if
-    /// saves never stop).
+    /// saves never stop). At the cap the queued trigger, and any engine
+    /// follow-up that joined it, is dropped until the next event (a save,
+    /// resume, `online` or retry) starts a new flight, as in sickness_tracker.
     pub max_follow_ups: u32,
     /// The engine's budget for one push (see [`crate::with_budget`]).
     pub push_budget: Duration,
@@ -49,7 +51,8 @@ impl Default for SyncPolicy {
 impl SyncPolicy {
     /// How long to wait before retrying after `failures` automatic failures in
     /// a row: the step for that count (the last step repeats), scaled by
-    /// `jitter` bounded to this policy's [`Spread`].
+    /// `jitter` bounded to this policy's [`Spread`] (±20 % by default), even
+    /// though [`Jitter::new`] allows up to ±50 %.
     pub fn retry_delay(&self, failures: NonZeroU32, jitter: Jitter) -> Duration {
         let base = self.retry_steps.step(failures);
         let factor = 1.0 + self.jitter.bound(jitter).fraction();

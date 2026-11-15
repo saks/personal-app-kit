@@ -14,6 +14,11 @@ use crate::host::{Host, Outcome, SyncEvent};
 /// closes the gate and drops any armed retry. A Manual run calls this
 /// directly (it is not admitted into the flight; the app's engine lock keeps
 /// it from overlapping) and never arms a retry.
+///
+/// The follow-up is always automatic: after a Manual run it is queued as
+/// `Write` (the rows it covers were saved during the push), so the UI sees
+/// no second Manual start and an offline failure arms a retry. After an
+/// `Exit` run there is none: the process is shutting down.
 pub async fn run<H: Host>(host: &H, trigger: SyncTrigger) -> Result<H::Report, H::Error> {
     info!(?trigger, "sync: start");
     host.emit(&SyncEvent::Started { trigger });
@@ -30,8 +35,7 @@ pub async fn run<H: Host>(host: &H, trigger: SyncTrigger) -> Result<H::Report, H
                 outcome: Outcome::Synced(report),
             });
             if host.wants_follow_up(report) {
-                info!(?trigger, "sync: the engine asked for a follow-up run");
-                request(host, trigger);
+                queue_follow_up(host, trigger);
             }
         }
         Err(error) => {
@@ -48,6 +52,51 @@ pub async fn run<H: Host>(host: &H, trigger: SyncTrigger) -> Result<H::Report, H
         }
     }
     result
+}
+
+/// Where the engine's follow-up after a `trigger` run goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FollowUp {
+    /// Request an automatic run with this trigger.
+    Queue(SyncTrigger),
+    /// Drop it: no run may start now.
+    Skip,
+}
+
+impl FollowUp {
+    fn after(trigger: SyncTrigger) -> Self {
+        match trigger {
+            // Rows saved during the push: what a `Write` run covers. Never
+            // `Manual`, which is the user's and arms no retry.
+            SyncTrigger::Manual => Self::Queue(SyncTrigger::Write),
+            // A flight spawned now would race the process exit.
+            SyncTrigger::Exit => Self::Skip,
+            SyncTrigger::Auto
+            | SyncTrigger::Write
+            | SyncTrigger::Flush
+            | SyncTrigger::Retry
+            | SyncTrigger::Online
+            | SyncTrigger::Background
+            | SyncTrigger::Settings => Self::Queue(trigger),
+        }
+    }
+}
+
+/// The engine asked for one more run after a successful `trigger` run.
+fn queue_follow_up<H: Host>(host: &H, trigger: SyncTrigger) {
+    match FollowUp::after(trigger) {
+        FollowUp::Queue(next) => {
+            info!(
+                ?trigger,
+                ?next,
+                "sync: the engine asked for a follow-up run"
+            );
+            request(host, next);
+        }
+        FollowUp::Skip => {
+            info!(?trigger, "sync: follow-up skipped; the process is exiting");
+        }
+    }
 }
 
 /// The scheduler, if automatic runs may start now.
@@ -81,3 +130,6 @@ async fn drive<H: Host>(host: H, mut flight: Flight, mut trigger: SyncTrigger) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
