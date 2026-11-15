@@ -15,6 +15,7 @@ repository = "https://github.com/saks/personal-app-kit"
 
 [workspace.dependencies]
 kit-core = { path = "crates/kit-core" }
+kit-sync-types = { path = "crates/kit-sync-types" }
 # kit-db (host only). turso is pinned exactly: both apps' replicas and
 # kit-db's busy classification depend on 0.8.3 behaviour.
 turso = { version = "=0.8.3", default-features = false }

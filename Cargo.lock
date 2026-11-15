@@ -1356,6 +1356,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kit-sync"
+version = "0.1.0"
+dependencies = [
+ "kit-sync-types",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "kit-sync-types"
 version = "0.1.0"
 dependencies = [

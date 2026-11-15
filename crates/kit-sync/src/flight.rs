@@ -1,0 +1,156 @@
+//! The single flight: one automatic run at a time, one more queued behind
+//! it, and a [`Flight`] guard that ends the flight on drop, panic or abort.
+
+use std::sync::{Arc, Mutex};
+
+use kit_sync_types::SyncTrigger;
+use tracing::warn;
+
+use crate::gate::{Gate, Mode};
+use crate::lock;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Slot {
+    Idle,
+    Running,
+    /// One more run waits for the current one. Later requests join it.
+    Queued(SyncTrigger),
+}
+
+/// Flight state shared with the [`Flight`] guard, which outlives the borrow
+/// of [`crate::AutoSync`] (it moves into the spawned run).
+#[derive(Debug)]
+pub(crate) struct Shared {
+    mode: Mode,
+    gate: Mutex<Gate>,
+    slot: Mutex<Slot>,
+    max_follow_ups: u32,
+}
+
+impl Shared {
+    pub(crate) fn new(mode: Mode, gate: Gate, max_follow_ups: u32) -> Self {
+        Self {
+            mode,
+            gate: Mutex::new(gate),
+            slot: Mutex::new(Slot::Idle),
+            max_follow_ups,
+        }
+    }
+
+    pub(crate) fn active(&self) -> bool {
+        self.mode == Mode::On && *lock(&self.gate) == Gate::Ready
+    }
+
+    pub(crate) fn set_gate(&self, gate: Gate) {
+        *lock(&self.gate) = gate;
+    }
+
+    /// `NeedsUser` back to `Ready` (a run succeeded).
+    pub(crate) fn clear_needs_user(&self) {
+        let mut gate = lock(&self.gate);
+        if *gate == Gate::NeedsUser {
+            *gate = Gate::Ready;
+        }
+    }
+
+    /// `Ready` to `NeedsUser` (a run failed in a way only the user can fix).
+    pub(crate) fn needs_user(&self) {
+        let mut gate = lock(&self.gate);
+        if *gate == Gate::Ready {
+            *gate = Gate::NeedsUser;
+        }
+    }
+
+    pub(crate) fn admit(shared: &Arc<Self>, trigger: SyncTrigger) -> Admission {
+        let mut slot = lock(&shared.slot);
+        match *slot {
+            Slot::Idle => {
+                *slot = Slot::Running;
+                Admission::Start(Flight {
+                    shared: Some(Arc::clone(shared)),
+                    follow_ups: 0,
+                })
+            }
+            Slot::Running => {
+                *slot = Slot::Queued(trigger);
+                Admission::Joined
+            }
+            Slot::Queued(_) => Admission::Joined,
+        }
+    }
+
+    /// Whether no flight is running or queued (tests).
+    #[cfg(test)]
+    pub(crate) fn idle(&self) -> bool {
+        *lock(&self.slot) == Slot::Idle
+    }
+}
+
+/// The answer to [`crate::AutoSync::admit`].
+#[derive(Debug)]
+#[must_use = "dropping a started Flight ends it at once"]
+pub enum Admission {
+    /// The flight was idle: the caller owns it now and runs.
+    Start(Flight),
+    /// A run is in flight: one run is queued behind it (or was already).
+    Joined,
+}
+
+/// Ownership of the running flight. Dropping it (a finished drain, a panic,
+/// an aborted task) sets the flight idle, so it can never stay running.
+#[derive(Debug)]
+pub struct Flight {
+    /// `None` once the flight has ended.
+    shared: Option<Arc<Shared>>,
+    follow_ups: u32,
+}
+
+impl Flight {
+    /// Call when a run ends: the queued trigger to run next, keeping the
+    /// flight, or `None`, ending it. Ends the flight when automatic runs are
+    /// off or after [`crate::SyncPolicy::max_follow_ups`] queued runs.
+    pub fn next_queued(&mut self) -> Option<SyncTrigger> {
+        let shared = self.shared.take()?;
+        let next = {
+            let mut slot = lock(&shared.slot);
+            let next = match *slot {
+                Slot::Queued(trigger) if shared.active() => self.follow_up(&shared, trigger),
+                Slot::Idle | Slot::Running | Slot::Queued(_) => None,
+            };
+            *slot = match next {
+                Some(_) => Slot::Running,
+                None => Slot::Idle,
+            };
+            next
+        };
+        if next.is_some() {
+            self.shared = Some(shared);
+        }
+        next
+    }
+
+    /// Count one more follow-up, unless the cap is reached.
+    fn follow_up(&mut self, shared: &Shared, trigger: SyncTrigger) -> Option<SyncTrigger> {
+        if self.follow_ups >= shared.max_follow_ups {
+            warn!(
+                follow_ups = self.follow_ups,
+                ?trigger,
+                "sync: follow-up limit reached"
+            );
+            return None;
+        }
+        self.follow_ups += 1;
+        Some(trigger)
+    }
+}
+
+impl Drop for Flight {
+    fn drop(&mut self) {
+        if let Some(shared) = self.shared.take() {
+            *lock(&shared.slot) = Slot::Idle;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;
