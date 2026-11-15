@@ -726,15 +726,13 @@ async fn a_manual_runs_follow_up_failing_offline_arms_a_retry() {
         .store(1, std::sync::atomic::Ordering::SeqCst);
     // Scripted per sync, so the result doesn't depend on when the spawned
     // follow-up runs: the Manual run succeeds, the follow-up is offline.
+    // The later unscripted Retry uses `ready()`'s Succeed.
     host.script([
         Behavior::Succeed {
             takes: Duration::ZERO,
         },
         Behavior::Offline,
     ]);
-    host.behave(Behavior::Succeed {
-        takes: Duration::ZERO,
-    });
     run(&host, SyncTrigger::Manual).await.expect("manual");
     advance(1_000).await;
     assert_eq!(

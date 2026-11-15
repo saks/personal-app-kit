@@ -1,7 +1,7 @@
 use super::char_at;
 
 #[test]
-fn decodes_every_width_like_chars() {
+fn decodes_every_utf8_width_like_str_chars() {
     let text = "a\u{e9}\u{20ac}\u{1f600}z";
     let bytes = text.as_bytes();
     let mut i = 0;
