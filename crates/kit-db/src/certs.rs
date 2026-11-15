@@ -4,7 +4,9 @@
 //! panics on Android (no system CA store). Point rustls-native-certs at a
 //! Mozilla PEM bundle via `SSL_CERT_FILE` before any synced DB is opened.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use base64::Engine;
 
@@ -39,20 +41,34 @@ pub fn install_mozilla_ca_file_in(dir: &Path) -> Result<PathBuf> {
 
 /// Write `cacert.pem` under `dir` without touching the environment.
 ///
-/// Written to a temp file next to it, then renamed over it, so a reader (a
-/// sync IO thread, or another process such as a background job) never sees a
-/// truncated or half-written bundle.
+/// Written to a temp file next to it, synced to disk, then renamed over it,
+/// so a reader (a sync IO thread, or another process such as a background
+/// job) never sees a truncated or half-written bundle.
 pub fn write_mozilla_ca_file(dir: &Path) -> Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
     let path = dir.join(CA_FILE_NAME);
-    // Per process, so two processes writing at once don't share a temp file.
-    let temp = dir.join(format!("{CA_FILE_NAME}.{}.tmp", std::process::id()));
-    std::fs::write(&temp, mozilla_root_pem())?;
-    std::fs::rename(&temp, &path).inspect_err(|_| {
-        // Best effort: don't leave the temp file behind.
-        let _cleanup = std::fs::remove_file(&temp);
-    })?;
+    let temp = dir.join(temp_name());
+    write_synced(&temp, mozilla_root_pem().as_bytes())
+        .and_then(|()| std::fs::rename(&temp, &path))
+        .inspect_err(|_| {
+            // Best effort: don't leave the temp file behind.
+            let _cleanup = std::fs::remove_file(&temp);
+        })?;
     Ok(path)
+}
+
+/// `cacert.pem.<pid>.<n>.tmp`: unique per call, so concurrent writers (other
+/// processes, or other threads of this one) never share a temp file.
+fn temp_name() -> String {
+    static CALLS: AtomicU64 = AtomicU64::new(0);
+    let call = CALLS.fetch_add(1, Ordering::Relaxed);
+    format!("{CA_FILE_NAME}.{}.{call}.tmp", std::process::id())
+}
+
+fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut file = std::fs::File::create(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
 }
 
 fn mozilla_root_pem() -> String {

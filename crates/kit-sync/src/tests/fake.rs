@@ -1,5 +1,6 @@
 //! The fake [`Host`]: a scripted engine on a paused clock (OB's `Fake`).
 
+use std::collections::VecDeque;
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -56,6 +57,9 @@ pub(super) enum Seen {
 pub(super) struct FakeInner {
     pub(super) auto: AutoSync,
     pub(super) behavior: Mutex<Behavior>,
+    /// Behaviours for the next syncs, in order, before `behavior` applies
+    /// again: fixed per call, not by when the test changes `behavior`.
+    script: Mutex<VecDeque<Behavior>>,
     pub(super) pending: AtomicU64,
     /// How many of the next successful runs report rows left behind.
     pub(super) leave_behind: AtomicU64,
@@ -85,6 +89,7 @@ impl Fake {
         Self(Arc::new(FakeInner {
             auto: AutoSync::new(policy, mode, gate, Handle::current()),
             behavior: Mutex::new(behavior),
+            script: Mutex::new(VecDeque::new()),
             pending: AtomicU64::new(1),
             leave_behind: AtomicU64::new(0),
             events: Mutex::new(Vec::new()),
@@ -112,6 +117,12 @@ impl Fake {
 
     pub(super) fn behave(&self, behavior: Behavior) {
         *lock(&self.0.behavior) = behavior;
+    }
+
+    /// The next syncs behave like `behaviors`, in order, whichever task
+    /// runs them and whenever it gets to run.
+    pub(super) fn script(&self, behaviors: impl IntoIterator<Item = Behavior>) {
+        lock(&self.0.script).extend(behaviors);
     }
 
     pub(super) fn set_pending(&self, rows: u64) {
@@ -156,7 +167,8 @@ impl Host for Fake {
 
     async fn sync(&self) -> Result<Report, FakeError> {
         let _hold = self.0.hold.lock().await;
-        let behavior = *lock(&self.0.behavior);
+        let scripted = lock(&self.0.script).pop_front();
+        let behavior = scripted.unwrap_or_else(|| *lock(&self.0.behavior));
         match behavior {
             Behavior::Succeed { takes } => {
                 // Counted at the start, like the engines do.

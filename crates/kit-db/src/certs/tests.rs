@@ -44,3 +44,36 @@ fn rewrites_the_bundle_in_place_and_leaves_no_temp_file() {
         .collect();
     assert_eq!(names, vec![std::ffi::OsString::from(CA_FILE_NAME)]);
 }
+
+#[test]
+fn temp_names_are_unique_per_call() {
+    let first = temp_name();
+    let second = temp_name();
+    assert_ne!(first, second);
+    let pid = std::process::id().to_string();
+    for name in [&first, &second] {
+        assert!(
+            name.starts_with(&format!("{CA_FILE_NAME}.{pid}.")),
+            "{name}"
+        );
+        assert!(name.ends_with(".tmp"), "{name}");
+    }
+}
+
+#[test]
+fn concurrent_writers_in_one_process_all_succeed() {
+    let dir = tempfile::tempdir().unwrap();
+    std::thread::scope(|scope| {
+        let writers: Vec<_> = (0..8)
+            .map(|_| scope.spawn(|| write_mozilla_ca_file(dir.path())))
+            .collect();
+        for writer in writers {
+            writer.join().unwrap().unwrap();
+        }
+    });
+    let names: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(names, vec![std::ffi::OsString::from(CA_FILE_NAME)]);
+}

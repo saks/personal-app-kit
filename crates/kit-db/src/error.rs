@@ -1,7 +1,11 @@
 use std::path::PathBuf;
 
 /// Everything kit-db can fail with. Each app maps it into its own IPC error.
+///
+/// `#[non_exhaustive]`: a new variant is not a breaking change, so an app's
+/// `match` needs a catch-all arm (map it to a generic error).
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error(transparent)]
     Turso(#[from] turso::Error),

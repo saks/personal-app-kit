@@ -30,7 +30,9 @@ pub struct AppearancePickerProps {
     /// app draws content only. `None` = the kit's generic swatch.
     #[prop_or_default]
     pub preview: Option<Callback<Theme, Html>>,
-    /// Extra classes on the picker's root `<div>` (spacing in the host page).
+    /// Extra classes on the picker's root `<div>`, for spacing around the
+    /// picker in the host page (margins). The root already carries
+    /// `space-y-3` for the gap between its two fieldsets.
     #[prop_or_default]
     pub class: Classes,
 }

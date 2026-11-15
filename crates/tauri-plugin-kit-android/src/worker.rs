@@ -16,9 +16,9 @@ pub(crate) enum NoDataDir {
     Panicked,
 }
 
-/// Get the app's job from `registered` and run it in `data_dir`. A missing
-/// data dir, or a panic in the app's registration or its run, becomes a
-/// retry: a panic must not cross into Java. (Release builds that abort on
+/// Get the app's job from `registered`, call its `init_logs` first, then run
+/// it in `data_dir`. A missing data dir, or a panic in the app's
+/// registration, its `init_logs` or its run, becomes a retry: a panic must not cross into Java. (Release builds that abort on
 /// panic die instead, and WorkManager reschedules.)
 pub(crate) fn run(
     registered: fn() -> BackgroundSync,
@@ -31,6 +31,9 @@ pub(crate) fn run(
 }
 
 fn run_registered(job: BackgroundSync, data_dir: Result<String, NoDataDir>) -> WorkerResult {
+    if let Some(init_logs) = job.init_logs {
+        init_logs();
+    }
     let data_dir = match data_dir {
         Ok(dir) => dir,
         Err(NoDataDir::Unreadable(err)) => {

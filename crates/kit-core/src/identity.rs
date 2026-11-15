@@ -3,6 +3,8 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::str::FromStr;
 
+use crate::const_str::char_at;
+
 /// Which identity value failed to parse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdentityKind {
@@ -144,7 +146,7 @@ impl Rules {
         let mut i = 0;
         let mut at = 0;
         while i < bytes.len() {
-            let (ch, width) = decode(bytes, i);
+            let (ch, width) = char_at(bytes, i);
             let ok = self.middle.allows(ch)
                 && (at != 0 || self.first.allows(ch))
                 && (at + 1 != len || self.last.allows(ch));
@@ -169,41 +171,6 @@ const fn char_count(bytes: &[u8]) -> usize {
         i += 1;
     }
     count
-}
-
-/// The `char` starting at byte `i` of valid UTF-8, and its width, for `const`
-/// code (where `chars()` is not available). Only error reports need a
-/// non-ASCII `char`.
-const fn decode(bytes: &[u8], i: usize) -> (char, usize) {
-    let lead = byte_at(bytes, i);
-    let (code, width) = if lead < 0x80 {
-        (lead, 1)
-    } else if lead < 0xE0 {
-        ((lead & 0x1F) << 6 | (byte_at(bytes, i + 1) & 0x3F), 2)
-    } else if lead < 0xF0 {
-        (
-            (lead & 0x0F) << 12
-                | (byte_at(bytes, i + 1) & 0x3F) << 6
-                | (byte_at(bytes, i + 2) & 0x3F),
-            3,
-        )
-    } else {
-        (
-            (lead & 0x07) << 18
-                | (byte_at(bytes, i + 1) & 0x3F) << 12
-                | (byte_at(bytes, i + 2) & 0x3F) << 6
-                | (byte_at(bytes, i + 3) & 0x3F),
-            4,
-        )
-    };
-    match char::from_u32(code) {
-        Some(ch) => (ch, width),
-        None => (char::REPLACEMENT_CHARACTER, width),
-    }
-}
-
-const fn byte_at(bytes: &[u8], i: usize) -> u32 {
-    if i < bytes.len() { bytes[i] as u32 } else { 0 }
 }
 
 /// Env-var prefix such as `OCTOBUDGET` or `SICKNESS_TRACKER`.

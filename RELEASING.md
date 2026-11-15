@@ -9,6 +9,14 @@ All kit crates share `[workspace.package] version` in the root `Cargo.toml` and 
 - A tag is cut only after `make check` passes on the merged `main` and @saks has merged the PR. GitHub Actions is off, so the local gate is the only gate.
 - A pushed tag is never moved, deleted or reused. A bad release is fixed by a new tag.
 - `turso` is pinned `=0.8.3` in the kit (root `Cargo.toml`), so a turso bump lands in the kit and in both apps together.
+- `kit_db::Error` is `#[non_exhaustive]`: adding a variant is not breaking (apps match it with a catch-all arm). Removing or changing a variant still is.
+- Every release lists its changes in `CHANGELOG.md`.
+
+## sea-query and turso bump checklist
+
+- Review `crates/kit-db/src/query/values.rs` for new `sea_query::Value` variants. Its last arm turns any variant it doesn't name into a run-time `Error::UnsupportedValue`, so a new variant is not a compile error: give it a named arm (or confirm the fallback is right).
+- Re-check `kit_db::Error::is_busy` against the new turso error types.
+- Bump the kit and both apps together (turso is pinned exactly).
 
 ## Steps
 

@@ -59,7 +59,8 @@ pub async fn run<H: Host>(host: &H, trigger: SyncTrigger) -> Result<H::Report, H
 enum FollowUp {
     /// Request an automatic run with this trigger.
     Queue(SyncTrigger),
-    /// Drop it: no run may start now.
+    /// Drop it: the run was `Exit`, and no flight may start while the
+    /// process shuts down.
     Skip,
 }
 
