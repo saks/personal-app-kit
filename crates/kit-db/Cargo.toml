@@ -22,6 +22,10 @@ chrono = { workspace = true, features = ["clock"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { workspace = true }
 tempfile = { workspace = true }
+# Tests only: `with-json` adds a `Value` variant, so the tests reach the
+# fallback arm an app hits when it enables a sea-query type feature.
+sea-query = { workspace = true, features = ["with-json"] }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

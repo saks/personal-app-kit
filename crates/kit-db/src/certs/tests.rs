@@ -30,3 +30,17 @@ fn writes_a_non_empty_bundle_without_touching_the_env() {
     assert!(webpki_root_certs::TLS_SERVER_ROOT_CERTS.len() > 50);
     assert_eq!(std::env::var_os(SSL_CERT_FILE_ENV), before);
 }
+
+#[test]
+fn rewrites_the_bundle_in_place_and_leaves_no_temp_file() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join(CA_FILE_NAME), "stale").unwrap();
+    let path = write_mozilla_ca_file(dir.path()).unwrap();
+    let pem = std::fs::read_to_string(&path).unwrap();
+    assert!(pem.starts_with("-----BEGIN CERTIFICATE-----"), "replaced");
+    let names: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(names, vec![std::ffi::OsString::from(CA_FILE_NAME)]);
+}

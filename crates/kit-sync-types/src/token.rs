@@ -3,14 +3,20 @@
 use std::fmt;
 use std::str::FromStr;
 
+use zeroize::{Zeroize, ZeroizeOnDrop};
+
 /// A database token. Never printed: `Debug` redacts it and there is no
-/// `Display`; [`AuthToken::expose`] is the one way out.
+/// `Display`; [`AuthToken::expose`] is the one way out. Its heap copy is
+/// wiped on drop; copies made from [`AuthToken::expose`] are the caller's.
 #[derive(Clone, PartialEq, Eq)]
 pub struct AuthToken(String);
 
+/// Why a pasted token was rejected. `Display` is the message for the user.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TokenError {
+    /// Nothing left after trimming the surrounding spaces.
     Empty,
+    /// Spaces (or other whitespace) inside the token.
     Whitespace,
 }
 
@@ -46,6 +52,15 @@ impl AuthToken {
         &self.0
     }
 }
+
+// Not `Zeroize`: a public `zeroize()` would leave an empty token behind.
+impl Drop for AuthToken {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for AuthToken {}
 
 impl fmt::Debug for AuthToken {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

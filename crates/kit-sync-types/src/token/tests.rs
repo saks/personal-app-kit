@@ -19,3 +19,9 @@ fn debug_never_prints_the_token() {
     assert!(!debug.contains("dummy-secret-token"), "{debug}");
     assert_eq!(debug, "AuthToken(<redacted>)");
 }
+
+#[test]
+fn the_token_is_wiped_on_drop() {
+    fn wiped_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+    wiped_on_drop::<AuthToken>();
+}

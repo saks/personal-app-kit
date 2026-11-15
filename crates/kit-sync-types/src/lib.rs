@@ -11,6 +11,8 @@
 //! - [`SyncUrl`] and [`AuthToken`]: the connection, parsed once at the edge.
 //!   The user enters both; no URL or host is built in.
 
+#![warn(missing_docs)]
+
 mod badge;
 mod failure;
 mod skip;

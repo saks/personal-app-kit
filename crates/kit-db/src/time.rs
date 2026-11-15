@@ -12,6 +12,10 @@ use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, SecondsFormat, SubsecRou
 use crate::error::Error;
 
 /// A UTC instant at millisecond precision. `Display` is the stored form.
+///
+/// `Ord` matches the text order of the stored form only for years 0000–9999:
+/// outside them the year gets a sign and more digits (`+10000-…`, `-0001-…`),
+/// and text comparison no longer follows time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UtcMillis(DateTime<Utc>);
 

@@ -62,6 +62,16 @@ fn rejects_enum_values_and_u64_overflow() {
 }
 
 #[test]
+fn rejects_values_from_sea_query_type_features() {
+    // `with-json` is on for tests only (see kit-db's dev-dependencies).
+    let json = Values(vec![Value::Json(Some(Box::new(serde_json::json!(1))))]);
+    assert!(matches!(
+        to_turso_values(json),
+        Err(Error::UnsupportedValue)
+    ));
+}
+
+#[test]
 fn build_compiles_sql_and_params() {
     let prepared = build(
         Query::select()

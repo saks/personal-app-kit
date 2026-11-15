@@ -17,6 +17,10 @@ pub enum Error {
     IntegerOverflow,
     #[error("unsupported sea-query enum value")]
     UnsupportedEnum,
+    /// A value from a sea-query type feature (`with-chrono`, `with-json`, …)
+    /// that kit-db does not bind; store it as text or an integer instead.
+    #[error("unsupported sea-query value type")]
+    UnsupportedValue,
     #[error("{var} must be YYYY-MM-DD")]
     InvalidClock { var: String },
     #[error("timestamp is required")]

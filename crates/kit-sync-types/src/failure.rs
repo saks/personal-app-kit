@@ -13,6 +13,7 @@ pub enum FailureClass {
 /// An app's own failure-kind enum. Implement it with an exhaustive match (no
 /// catch-all), so a new kind has to pick its class.
 pub trait FailureKind {
+    /// Whether this kind needs the user or may clear by itself.
     fn class(self) -> FailureClass;
 }
 

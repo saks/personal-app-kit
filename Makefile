@@ -1,6 +1,6 @@
 # personal-app-kit gate. GitHub Actions is off on purpose: `make check` is the gate.
 #
-#   make check   # layout checks, fmt --check, clippy -D warnings (host + wasm32), tests
+#   make check   # layout checks, fmt --check, clippy -D warnings (host + wasm32), tests, docs -D warnings (host + wasm32)
 
 WASM_TARGET := wasm32-unknown-unknown
 
@@ -10,12 +10,12 @@ TEST_TIMEOUT_S ?= 600
 TIMEOUT_BIN := $(shell command -v timeout 2>/dev/null || command -v gtimeout 2>/dev/null)
 BOUNDED := $(if $(TIMEOUT_BIN),$(TIMEOUT_BIN) $(TEST_TIMEOUT_S),)
 
-.PHONY: help check layout fmt clippy clippy-wasm test
+.PHONY: help check layout fmt clippy clippy-wasm test doc doc-wasm
 
 help:
-	@echo "check         layout + fmt --check + clippy -D warnings (host, $(WASM_TARGET)) + tests"
+	@echo "check         layout + fmt --check + clippy -D warnings (host, $(WASM_TARGET)) + tests + docs -D warnings (host, $(WASM_TARGET))"
 
-check: layout fmt clippy clippy-wasm test
+check: layout fmt clippy clippy-wasm test doc doc-wasm
 
 # Unit tests live in tests.rs files; no allow(dead_code) anywhere.
 layout:
@@ -33,3 +33,9 @@ clippy-wasm:
 
 test:
 	$(BOUNDED) cargo test --workspace --all-features --locked
+
+doc:
+	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked
+
+doc-wasm:
+	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked --target $(WASM_TARGET)

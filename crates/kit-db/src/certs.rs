@@ -38,10 +38,20 @@ pub fn install_mozilla_ca_file_in(dir: &Path) -> Result<PathBuf> {
 }
 
 /// Write `cacert.pem` under `dir` without touching the environment.
+///
+/// Written to a temp file next to it, then renamed over it, so a reader (a
+/// sync IO thread, or another process such as a background job) never sees a
+/// truncated or half-written bundle.
 pub fn write_mozilla_ca_file(dir: &Path) -> Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
     let path = dir.join(CA_FILE_NAME);
-    std::fs::write(&path, mozilla_root_pem())?;
+    // Per process, so two processes writing at once don't share a temp file.
+    let temp = dir.join(format!("{CA_FILE_NAME}.{}.tmp", std::process::id()));
+    std::fs::write(&temp, mozilla_root_pem())?;
+    std::fs::rename(&temp, &path).inspect_err(|_| {
+        // Best effort: don't leave the temp file behind.
+        let _cleanup = std::fs::remove_file(&temp);
+    })?;
     Ok(path)
 }
 
