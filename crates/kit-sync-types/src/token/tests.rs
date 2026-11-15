@@ -13,6 +13,15 @@ fn tokens_are_trimmed_and_one_word() {
 }
 
 #[test]
+fn errors_keep_the_st_messages() {
+    assert_eq!(TokenError::Empty.to_string(), "paste a Turso token");
+    assert_eq!(
+        TokenError::Whitespace.to_string(),
+        "the token must not contain spaces"
+    );
+}
+
+#[test]
 fn debug_never_prints_the_token() {
     let token: AuthToken = "dummy-secret-token".parse().unwrap();
     let debug = format!("{token:?}");
