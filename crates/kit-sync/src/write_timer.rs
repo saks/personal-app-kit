@@ -55,9 +55,10 @@ pub fn schedule_after_write<H: Host>(host: &H) {
 ///
 /// The pending check runs inside the kit and has no hook, so an app cannot
 /// act on its answer. octo-budget-rs enqueued its Android background job only
-/// when something was pending (saks/octo-budget-rs#149): with this function
-/// it either calls [`Host::pending`] itself before enqueueing (one more
-/// count) or enqueues unconditionally (the job then finds nothing pending).
+/// when something was pending (saks/octo-budget-rs#149). With this function
+/// it has two options: call [`Host::pending`] itself before enqueueing,
+/// which counts the pending rows a second time (the kit counts them once
+/// here), or enqueue unconditionally (the job then finds nothing pending).
 pub fn on_suspended<H: Host>(host: &H) {
     let Some(auto) = active(host) else { return };
     auto.write_timer.cancel();

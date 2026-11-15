@@ -8,13 +8,13 @@ Plan and decisions: [sickness_tracker#87](https://github.com/saks/sickness_track
 
 | Crate | Target | What it is |
 |---|---|---|
-| `kit-core` | host + wasm | App identity newtypes, parsed once: `EnvPrefix`, `LogTag`, `StoragePrefix`; `log_tag!` checks a literal at compile time |
+| `kit-core` | host + wasm | App identity newtypes, parsed once: `EnvPrefix`, `LogTag`, `StoragePrefix`; `log_tag!` checks a literal at compile time; `const_str::char_at` (`const` UTF-8 decode for literal checks) |
 | `kit-build` | build-dependency | `emit_git_info(&EnvPrefix)`: sets `<PREFIX>_GIT_SHA` and `<PREFIX>_BUILT_AT` for `env!` |
 | `kit-db` | host only (empty on wasm) | Turso helpers: sea-query `build`/`query`/`execute`, `with_transaction`, row readers, Mozilla CA bundle, `<PREFIX>_DATA_DIR`/`_DB_PATH`/`_CLOCK` overrides, `tursodb` lookup, `UtcMillis`. No schema or DDL |
 | `kit-theme` | host + wasm (`yew` feature) | Shared daisyUI theme set: `ThemePrefs`/`Theme` enums, `ThemeProvider` + `use_theme` (feature `yew`, persistence via `ThemeApi`, mirror keys from `StoragePrefix`), `AppearancePicker` (feature `yew`: theme cards with live swatch + mode join), `css/themes.css`, `css/appearance-picker.css`, `js/theme-boot.js` |
 | `kit-sync-types` | host + wasm | Plain sync types both engines share: `SyncTrigger`, `FailureClass` + `FailureKind`, `SyncSkip`, `SyncBadge` + `badge(BadgeInput, BadgePolicy)`, `SyncUrl` / `AuthToken` (parsed once, token redacted). No engine, no built-in URLs |
 | `kit-sync` | host only (empty on wasm) | Engine-agnostic sync scheduler on plain tokio (no Tauri, no turso): `AutoSync` single flight with a drop/panic-safe `Flight` guard and a follow-up cap, write timer, `Auto` debounce, backoff with `Jitter`, `NeedsUser` `Gate` and `Mode`, exit flush, `with_budget` → `BudgetExceeded`, `SyncPolicy` (defaults: today's timings). The app implements `Host` (pending, sync, emit, `FailureClass`, optional `wants_follow_up`) |
-| `tauri-plugin-kit-android` | Android (host for tests; empty on wasm) | Shared WorkManager background-sync job: `SyncWorker` Kotlin library (linked into the app's Gradle build by `build.rs`), `background_sync!(fn() -> BackgroundSync)`, `lib_name!` (compile-time checked), `enqueue()`, `WorkerResult`. JNI symbol fixed by the kit's package |
+| `tauri-plugin-kit-android` | Android (host for tests; empty on wasm) | Shared WorkManager background-sync job: `SyncWorker` Kotlin library (linked into the app's Gradle build by `build.rs`), `background_sync!(fn() -> BackgroundSync)`, `lib_name!` (compile-time checked), `enqueue()`, `WorkerResult`, optional `init_logs`. JNI symbol fixed by the kit's package. Device test steps: `docs/android-background-sync-device-test.md` |
 
 Every directory under `crates/` is a workspace member. Nothing app-specific is baked into a crate: URLs, env-var prefixes, log tags, storage keys and timings are typed config the app passes in.
 

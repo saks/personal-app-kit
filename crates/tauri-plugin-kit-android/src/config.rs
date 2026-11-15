@@ -7,21 +7,28 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use kit_core::LogTag;
+use kit_core::const_str::char_at;
 
 use crate::result::WorkerResult;
 
 /// The app's background job, registered with [`crate::background_sync!`].
 #[derive(Clone, Debug)]
 pub struct BackgroundSync {
+    /// Called first by the worker, before it reads the data dir or calls
+    /// [`BackgroundSync::run`], so the worker's own early warnings are
+    /// logged in a cold process (where no app code has run yet). Install the
+    /// app's logger here; it must tolerate being called more than once in a
+    /// process (one call per job). `None`: the app sets up logging in `run`,
+    /// and the worker's warnings before it may be lost.
+    pub init_logs: Option<fn()>,
     /// One background Sync in the app's data dir (Tauri's `app_data_dir`).
     /// Runs on WorkManager's thread, not a tokio one, so it may `block_on`.
-    /// In a cold process it is the first app code that runs: set up logging
-    /// there.
     pub run: fn(&Path) -> WorkerResult,
     /// The app's native library, which `SyncWorker` loads in a cold process.
     pub lib_name: LibName,
     /// Logcat tag for the worker's own Kotlin warnings.
     pub log_tag: LogTag,
+    /// When WorkManager runs the job.
     pub schedule: Schedule,
 }
 
@@ -107,31 +114,9 @@ const fn ends_with_so(bytes: &[u8]) -> bool {
     len >= 3 && bytes[len - 3] == b'.' && bytes[len - 2] == b's' && bytes[len - 1] == b'o'
 }
 
-/// The `char` at byte `at`, which follows only ASCII bytes. Decoded by hand
-/// because `chars()` is not `const`.
+/// The `char` at byte `at`, which follows only ASCII bytes.
 const fn first_char(raw: &str, at: usize) -> char {
-    let bytes = raw.as_bytes();
-    let lead = byte_at(bytes, at);
-    let code = if lead < 0x80 {
-        lead
-    } else if lead < 0xE0 {
-        (lead & 0x1F) << 6 | (byte_at(bytes, at + 1) & 0x3F)
-    } else if lead < 0xF0 {
-        (lead & 0x0F) << 12 | (byte_at(bytes, at + 1) & 0x3F) << 6 | (byte_at(bytes, at + 2) & 0x3F)
-    } else {
-        (lead & 0x07) << 18
-            | (byte_at(bytes, at + 1) & 0x3F) << 12
-            | (byte_at(bytes, at + 2) & 0x3F) << 6
-            | (byte_at(bytes, at + 3) & 0x3F)
-    };
-    match char::from_u32(code) {
-        Some(ch) => ch,
-        None => char::REPLACEMENT_CHARACTER,
-    }
-}
-
-const fn byte_at(bytes: &[u8], i: usize) -> u32 {
-    if i < bytes.len() { bytes[i] as u32 } else { 0 }
+    char_at(raw.as_bytes(), at).0
 }
 
 impl FromStr for LibName {

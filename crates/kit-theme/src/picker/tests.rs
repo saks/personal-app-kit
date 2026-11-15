@@ -17,13 +17,10 @@ fn harness(props: &HarnessProps) -> Html {
     view::render(props.state, &props.picker, Callback::noop())
 }
 
+/// The props an app gets with `<AppearancePicker />`: the `#[prop_or]`
+/// defaults themselves, not a copy of them.
 fn defaults() -> AppearancePickerProps {
-    AppearancePickerProps {
-        theme_legend: AttrValue::Static("Theme"),
-        mode_legend: AttrValue::Static("Mode"),
-        preview: None,
-        class: Classes::new(),
-    }
+    yew::props!(AppearancePickerProps {})
 }
 
 fn render_with(state: PickerState, picker: AppearancePickerProps) -> String {

@@ -724,9 +724,16 @@ async fn a_manual_runs_follow_up_failing_offline_arms_a_retry() {
     host.0
         .leave_behind
         .store(1, std::sync::atomic::Ordering::SeqCst);
+    // Scripted per sync, so the result doesn't depend on when the spawned
+    // follow-up runs: the Manual run succeeds, the follow-up is offline.
+    // The later unscripted Retry uses `ready()`'s Succeed.
+    host.script([
+        Behavior::Succeed {
+            takes: Duration::ZERO,
+        },
+        Behavior::Offline,
+    ]);
     run(&host, SyncTrigger::Manual).await.expect("manual");
-    // The follow-up is spawned but has not run yet (one-thread runtime).
-    host.behave(Behavior::Offline);
     advance(1_000).await;
     assert_eq!(
         host.finished().last(),
@@ -739,9 +746,6 @@ async fn a_manual_runs_follow_up_failing_offline_arms_a_retry() {
     assert_eq!(host.auto().failures(), 1);
     assert!(host.auto().scheduled(), "the retry is armed");
     host.set_pending(1);
-    host.behave(Behavior::Succeed {
-        takes: Duration::ZERO,
-    });
     advance(10_000).await;
     assert_eq!(
         host.started(),

@@ -21,7 +21,7 @@ fn debug_never_prints_the_token() {
 }
 
 #[test]
-fn the_token_is_wiped_on_drop() {
+fn auth_token_is_zeroize_on_drop() {
     fn wiped_on_drop<T: zeroize::ZeroizeOnDrop>() {}
     wiped_on_drop::<AuthToken>();
 }

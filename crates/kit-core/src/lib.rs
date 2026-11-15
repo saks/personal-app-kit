@@ -2,7 +2,11 @@
 //!
 //! Kit crates never hardcode an app's env-var prefix, log tag or storage key
 //! prefix. The app parses them here and passes the typed value in.
+//!
+//! [`const_str`] holds the `const` UTF-8 helper the compile-time literal
+//! checks share (here and in tauri-plugin-kit-android).
 
+pub mod const_str;
 mod identity;
 
 pub use identity::{EnvPrefix, IdentityKind, Literal, LogTag, ParseIdentityError, StoragePrefix};

@@ -39,12 +39,16 @@ class SyncWorker(context: Context, params: WorkerParameters) :
         System.loadLibrary(library)
         runSync(applicationContext.dataDir.absolutePath)
       } catch (e: UnsatisfiedLinkError) {
-        Log.w(tag, "sync: background job could not load the native library", e)
-        RETRY
+        // Permanent: a missing library or symbol (a forgotten
+        // `background_sync!` shows up here as a dlopen error) stays missing
+        // until a fixed build is installed, so retrying can't fix it.
+        Log.e(tag, "sync: background job could not load the native library; failing", e)
+        FAILURE
       }
     }
     return when (code) {
       SUCCESS -> Result.success()
+      RETRY -> Result.retry()
       FAILURE -> Result.failure()
       else -> Result.retry()
     }

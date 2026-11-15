@@ -9,6 +9,7 @@ use crate::{BackgroundSync, Schedule, WorkerResult};
 
 fn kit_test_job() -> BackgroundSync {
     BackgroundSync {
+        init_logs: None,
         run: |_: &Path| WorkerResult::Success,
         lib_name: crate::lib_name!("kit_test_lib"),
         log_tag: kit_core::log_tag!("kit-test"),

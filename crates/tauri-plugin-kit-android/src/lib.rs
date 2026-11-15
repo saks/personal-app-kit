@@ -12,8 +12,13 @@
 //! - `enqueue` (Android, and host tests): one network-constrained job,
 //!   `REPLACE`, so at most one is queued.
 //! - In a cold process the worker needs no Tauri runtime: it loads the app's
-//!   library and calls `BackgroundSync::run` with the data dir. A panic,
-//!   in the app's registration or its run, becomes `WorkerResult::Retry`.
+//!   library, calls `BackgroundSync::init_logs` (if set), then
+//!   `BackgroundSync::run` with the data dir. A panic, in the app's
+//!   registration, its `init_logs` or its run, becomes `WorkerResult::Retry`.
+//!   A library that cannot be loaded fails the job (`SyncWorker` does not
+//!   retry an `UnsatisfiedLinkError`).
+//!
+//! Device test steps for adopting apps: `docs/android-background-sync-device-test.md`.
 //!
 //! Wasm builds get no items: the crate is Android-only, and is in the kit
 //! workspace (whose gate also builds `wasm32`) only for its host tests.
@@ -48,6 +53,7 @@ pub use result::WorkerResult;
 ///
 /// fn background_sync() -> BackgroundSync {
 ///     BackgroundSync {
+///         init_logs: Some(init_logs),
 ///         run: run_blocking,
 ///         lib_name: lib_name!("sickness_tracker_lib"),
 ///         log_tag: kit_core::log_tag!("sickness-tracker"),
