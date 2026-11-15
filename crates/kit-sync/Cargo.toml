@@ -1,0 +1,21 @@
+[package]
+name = "kit-sync"
+description = "Host-only, engine-agnostic sync scheduler: single flight, write timer, debounce, backoff, time budgets. Plain tokio; no Tauri, no turso."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+# Host only (the Tauri side). On wasm32 the crate is empty, like kit-db, so
+# `make check`'s wasm32 clippy never builds the tokio runtime.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+kit-sync-types = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
+tracing = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { workspace = true, features = ["time", "sync", "test-util"] }
+
+[lints]
+workspace = true
