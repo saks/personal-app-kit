@@ -3,7 +3,7 @@
 //! A port of octo-budget-rs `autosync` (main `2ebfd24`) with the app parts
 //! left out, plus four pieces from sickness_tracker: the follow-up cap, a
 //! flight that ends on drop or panic, an engine-requested follow-up, and the
-//! public `failures` / `scheduled` queries.
+//! public `backoff_attempts` / `scheduled` queries.
 //!
 //! - `AutoSync`: the scheduler state one app holds (single flight, write
 //!   timer, debounce, backoff, gate) and the `SyncPolicy` it runs with.
@@ -21,6 +21,18 @@
 //!
 //! Host only: on `wasm32` this crate is empty, so these names are plain text
 //! rather than intra-doc links (they would not resolve there).
+//!
+//! # App-specific status
+//!
+//! `SyncEvent` is only what the scheduler knows: a run started or finished,
+//! and the `FailureClass` of a failure. An app that shows a warning badge
+//! keeps that streak itself. `Host::emit` maps `SyncEvent` into the app's
+//! own status event and attaches the app-owned fields there.
+//!
+//! octo-budget-rs does this with `sync-status`: only an automatic `Other`
+//! increments the streak; a write leaves it; success, `NeedsUser` and a
+//! settings save clear it. `AutoSync::backoff_attempts` is not that streak.
+//! It resets on events the badge must ignore.
 #![cfg(not(target_arch = "wasm32"))]
 #![warn(missing_docs)]
 
@@ -98,9 +110,35 @@ impl AutoSync {
         Shared::admit(&self.shared, trigger)
     }
 
+    /// Automatic failures behind the currently stored retry delay, or `0`
+    /// when none is stored.
+    ///
+    /// This is the backoff counter, not a UI failure streak. The app owns
+    /// that (see the crate-level "App-specific status" section).
+    ///
+    /// It is `0` after the backoff is reset:
+    /// - [`schedule_after_write`], while automatic runs are active (reset
+    ///   when the write is scheduled);
+    /// - [`on_resumed`], while automatic runs are active (`Auto` due: stays
+    ///   `0`; `Auto` debounced and a retry was armed: stored as `1` again,
+    ///   the first step);
+    /// - [`on_online`], while automatic runs are active;
+    /// - [`settings_saved`], whenever the scheduler exists;
+    /// - a successful [`run`], including Manual;
+    /// - a [`run`] that fails as `NeedsUser`.
+    ///
+    /// A retry that fires and finds nothing pending leaves this count. The
+    /// next automatic failure that clears by itself continues from it.
+    pub fn backoff_attempts(&self) -> u32 {
+        self.backoff.backoff_attempts()
+    }
+
     /// Automatic failures in a row behind the armed backoff; 0 when none.
+    ///
+    /// Use [`Self::backoff_attempts`]. This is not a UI failure streak.
+    #[deprecated(note = "use backoff_attempts(); not a UI failure streak")]
     pub fn failures(&self) -> u32 {
-        self.backoff.failures()
+        self.backoff_attempts()
     }
 
     /// The host will sync by itself: a write timer or a retry is armed and

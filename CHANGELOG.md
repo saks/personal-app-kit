@@ -6,6 +6,10 @@ This file starts with the first release. Earlier work is in the git history and 
 
 ## Unreleased
 
+- kit-sync: `Host::suspended` receives the one pending count from `on_suspended`, then `Flush` runs unless the count is `Ok(0)`. Not called when automatic runs are inactive. (#18)
+- kit-sync: `AutoSync::backoff_attempts` is the backoff counter. `failures` is deprecated; it is not a UI failure streak. (#18)
+- kit-sync-types: `SyncTrigger::from_host` is deprecated (sickness_tracker routing; wrong for apps that start `Auto`/`Online` from the host) and will be removed at the next breaking release. sickness_tracker should keep this routing rule locally when it adopts kit-sync. (#18)
+- kit-sync: `Flight` is `#[must_use]`. `Admission::into_flight` starts a drain. Dropping a `Flight` still ends the flight and drops a queued run. (#18)
 - kit-db: `Error` is now `#[non_exhaustive]`. Apps matching it need a catch-all arm; new variants are no longer breaking. (#15)
 - kit-db: `Error::UnsupportedValue` for sea-query value types kit-db does not bind (#7).
 - kit-db: `write_mozilla_ca_file` writes a per-call temp file, `sync_all`s it and renames it over `cacert.pem`. (#15)

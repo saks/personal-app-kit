@@ -5,7 +5,7 @@ use tracing::{info, warn};
 
 use crate::AutoSync;
 use crate::backoff::arm_retry;
-use crate::flight::{Admission, Flight};
+use crate::flight::Flight;
 use crate::host::{Host, Outcome, SyncEvent};
 
 /// The only way a Sync runs. Emits `Started`, runs one [`Host::sync`], emits
@@ -108,7 +108,7 @@ pub(crate) fn active<H: Host>(host: &H) -> Option<&AutoSync> {
 /// Start an automatic run, or join the one queued behind the current run.
 pub(crate) fn request<H: Host>(host: &H, trigger: SyncTrigger) {
     let Some(auto) = active(host) else { return };
-    let Admission::Start(flight) = auto.admit(trigger) else {
+    let Some(flight) = auto.admit(trigger).into_flight() else {
         info!(?trigger, "sync: queued behind the current run");
         return;
     };

@@ -111,6 +111,8 @@ async fn suspend_with_nothing_unpushed_does_not_sync() {
     on_suspended(&host);
     advance(5_000).await;
     assert!(host.started().is_empty());
+    assert_eq!(host.suspended_calls(), vec![Ok(0)]);
+    assert_eq!(host.pending_calls(), 1);
 }
 
 #[tokio::test(start_paused = true)]
@@ -121,6 +123,19 @@ async fn suspend_drops_the_write_timer_and_flushes() {
     on_suspended(&host);
     advance(5_000).await;
     assert_eq!(host.started(), vec![SyncTrigger::Flush]);
+    assert_eq!(host.suspended_calls(), vec![Ok(1)]);
+    assert_eq!(host.pending_calls(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn suspend_flushes_when_the_count_fails() {
+    let host = Fake::ready();
+    host.fail_pending();
+    on_suspended(&host);
+    advance(5_000).await;
+    assert_eq!(host.started(), vec![SyncTrigger::Flush]);
+    assert_eq!(host.suspended_calls(), vec![Err(FakeError::Offline)]);
+    assert_eq!(host.pending_calls(), 1);
 }
 
 #[tokio::test(start_paused = true)]
@@ -162,6 +177,8 @@ async fn assert_no_automatic_activity(host: &Fake) {
     assert_eq!(flush_before_exit(host).await, Ok(()));
     advance(60_000).await;
     assert!(host.started().is_empty());
+    assert!(host.suspended_calls().is_empty());
+    assert_eq!(host.pending_calls(), 0);
 }
 
 #[tokio::test(start_paused = true)]
@@ -213,6 +230,11 @@ async fn needs_user_stops_automatic_runs_until_settings_are_saved() {
     on_suspended(&host);
     advance(60_000).await;
     assert_eq!(host.started().len(), 1, "blocked until Settings are saved");
+    assert!(
+        host.suspended_calls().is_empty(),
+        "NeedsUser is not active; the hook is not called"
+    );
+    assert_eq!(host.pending_calls(), 0);
 
     host.behave(Behavior::Succeed {
         takes: Duration::ZERO,
@@ -318,11 +340,11 @@ async fn settings_saved_drops_an_armed_retry() {
     let host = offline();
     schedule_after_write(&host);
     advance(2_000).await;
-    assert_eq!(host.auto().failures(), 1);
+    assert_eq!(host.auto().backoff_attempts(), 1);
     host.set_pending(0);
     settings_saved(&host, Gate::Ready);
     advance(1).await;
-    assert_eq!(host.auto().failures(), 0);
+    assert_eq!(host.auto().backoff_attempts(), 0);
     assert_eq!(host.started(), vec![SyncTrigger::Write]);
     advance(60_000).await;
     assert_eq!(
@@ -366,14 +388,14 @@ async fn failures_that_clear_by_themselves_retry_on_the_schedule() {
     advance(2).await;
     assert_eq!(host.started(), vec![SyncTrigger::Write, SyncTrigger::Retry]);
     // The Retry already failed and armed the next one.
-    assert_eq!(host.auto().failures(), 2);
+    assert_eq!(host.auto().backoff_attempts(), 2);
 
     advance(14_998).await;
     assert_eq!(host.started().len(), 2, "before 15 s");
     advance(2).await;
     assert_eq!(host.started().len(), 3);
     assert_eq!(host.started()[2], SyncTrigger::Retry);
-    assert_eq!(host.auto().failures(), 3);
+    assert_eq!(host.auto().backoff_attempts(), 3);
 }
 
 #[tokio::test(start_paused = true)]
@@ -409,7 +431,7 @@ async fn needs_user_never_retries() {
     schedule_after_write(&host);
     advance(2_000).await;
     assert_eq!(host.started(), vec![SyncTrigger::Write]);
-    assert_eq!(host.auto().failures(), 0);
+    assert_eq!(host.auto().backoff_attempts(), 0);
     advance(60_000).await;
     assert_eq!(host.started().len(), 1);
 }
@@ -419,12 +441,12 @@ async fn needs_user_drops_an_armed_retry() {
     let host = offline();
     schedule_after_write(&host);
     advance(2_000).await;
-    assert_eq!(host.auto().failures(), 1);
+    assert_eq!(host.auto().backoff_attempts(), 1);
     host.behave(Behavior::RejectToken);
     host.set_pending(1);
     run(&host, SyncTrigger::Manual).await.expect_err("401");
     assert_eq!(
-        host.auto().failures(),
+        host.auto().backoff_attempts(),
         0,
         "NeedsUser clears the armed retry"
     );
@@ -440,7 +462,7 @@ async fn needs_user_drops_an_armed_retry() {
 async fn manual_failure_does_not_arm_a_retry() {
     let host = offline();
     run(&host, SyncTrigger::Manual).await.expect_err("offline");
-    assert_eq!(host.auto().failures(), 0);
+    assert_eq!(host.auto().backoff_attempts(), 0);
     advance(60_000).await;
     assert_eq!(host.started(), vec![SyncTrigger::Manual]);
 }
@@ -450,13 +472,13 @@ async fn write_resets_the_backoff() {
     let host = offline();
     schedule_after_write(&host);
     advance(2_000).await;
-    assert_eq!(host.auto().failures(), 1);
+    assert_eq!(host.auto().backoff_attempts(), 1);
     host.behave(Behavior::Succeed {
         takes: Duration::ZERO,
     });
     host.set_pending(1);
     schedule_after_write(&host);
-    assert_eq!(host.auto().failures(), 0);
+    assert_eq!(host.auto().backoff_attempts(), 0);
     advance(2_000).await;
     assert_eq!(host.started(), vec![SyncTrigger::Write, SyncTrigger::Write]);
 }
@@ -466,14 +488,14 @@ async fn resume_resets_the_backoff_and_runs_auto() {
     let host = offline();
     schedule_after_write(&host);
     advance(2_000).await;
-    assert!(host.auto().failures() > 0);
+    assert!(host.auto().backoff_attempts() > 0);
     host.behave(Behavior::Succeed {
         takes: Duration::ZERO,
     });
     host.set_pending(1);
     on_resumed(&host);
     advance(1).await;
-    assert_eq!(host.auto().failures(), 0);
+    assert_eq!(host.auto().backoff_attempts(), 0);
     assert_eq!(host.started(), vec![SyncTrigger::Write, SyncTrigger::Auto]);
 }
 
@@ -484,10 +506,14 @@ async fn a_debounced_resume_rearms_the_retry_at_the_first_step() {
     advance(1).await;
     assert_eq!(host.started(), vec![SyncTrigger::Auto]);
     advance(20_000).await;
-    assert_eq!(host.auto().failures(), 3, "5 s and 15 s retries failed");
+    assert_eq!(
+        host.auto().backoff_attempts(),
+        3,
+        "5 s and 15 s retries failed"
+    );
     // Inside the 30 s window: no Auto, but the retry comes back in 5 s.
     on_resumed(&host);
-    assert_eq!(host.auto().failures(), 1);
+    assert_eq!(host.auto().backoff_attempts(), 1);
     assert!(host.auto().scheduled());
     let before = host.started().len();
     advance(4_999).await;
@@ -532,14 +558,14 @@ async fn online_resets_an_armed_retry() {
     let host = offline();
     schedule_after_write(&host);
     advance(2_000).await;
-    assert!(host.auto().failures() > 0);
+    assert!(host.auto().backoff_attempts() > 0);
     host.behave(Behavior::Succeed {
         takes: Duration::ZERO,
     });
     host.set_pending(1);
     on_online(&host);
     advance(1).await;
-    assert_eq!(host.auto().failures(), 0);
+    assert_eq!(host.auto().backoff_attempts(), 0);
     assert_eq!(
         host.started(),
         vec![SyncTrigger::Write, SyncTrigger::Online]
@@ -553,7 +579,7 @@ async fn mode_off_arms_no_retry() {
     on_online(&host);
     advance(60_000).await;
     assert!(host.started().is_empty());
-    assert_eq!(host.auto().failures(), 0);
+    assert_eq!(host.auto().backoff_attempts(), 0);
 }
 
 // --- Added from ST (1): the follow-up cap. ---
@@ -623,7 +649,7 @@ async fn a_panicking_run_leaves_the_flight_idle() {
 #[tokio::test(start_paused = true)]
 async fn an_aborted_run_leaves_the_flight_idle() {
     let host = Fake::new(Mode::On, Gate::Ready, Behavior::Hang);
-    let Admission::Start(flight) = host.auto().admit(SyncTrigger::Background) else {
+    let Some(flight) = host.auto().admit(SyncTrigger::Background).into_flight() else {
         panic!("idle");
     };
     let job = host.clone();
@@ -743,7 +769,7 @@ async fn a_manual_runs_follow_up_failing_offline_arms_a_retry() {
             FakeError::Offline
         ))
     );
-    assert_eq!(host.auto().failures(), 1);
+    assert_eq!(host.auto().backoff_attempts(), 1);
     assert!(host.auto().scheduled(), "the retry is armed");
     host.set_pending(1);
     advance(10_000).await;
@@ -798,7 +824,7 @@ async fn the_default_host_never_asks_for_a_follow_up() {
     assert_eq!(fake.started(), vec![SyncTrigger::Write]);
 }
 
-// --- Added from ST (4): failures() and scheduled(). ---
+// --- Added from ST (4): backoff_attempts() and scheduled(). ---
 
 #[tokio::test(start_paused = true)]
 async fn status_queries_track_arm_fire_and_reset() {
@@ -814,23 +840,27 @@ async fn status_queries_track_arm_fire_and_reset() {
     assert!(host.auto().scheduled(), "write timer armed");
     advance(2_000).await;
     assert!(!host.auto().scheduled(), "write timer fired");
-    assert_eq!(host.auto().failures(), 0);
+    assert_eq!(host.auto().backoff_attempts(), 0);
 
     host.behave(Behavior::Offline);
     host.set_pending(1);
     schedule_after_write(&host);
     advance(2_000).await;
-    assert_eq!(host.auto().failures(), 1);
+    assert_eq!(host.auto().backoff_attempts(), 1);
     assert!(host.auto().scheduled(), "retry armed");
     advance(5_000).await;
-    assert_eq!(host.auto().failures(), 2, "the retry fired and failed");
+    assert_eq!(
+        host.auto().backoff_attempts(),
+        2,
+        "the retry fired and failed"
+    );
     assert!(host.auto().scheduled(), "the next retry is armed");
 
     host.behave(Behavior::Succeed {
         takes: Duration::ZERO,
     });
     run(&host, SyncTrigger::Manual).await.expect("manual");
-    assert_eq!(host.auto().failures(), 0, "a success resets");
+    assert_eq!(host.auto().backoff_attempts(), 0, "a success resets");
     assert!(!host.auto().scheduled());
 }
 
@@ -841,6 +871,6 @@ async fn a_skipped_retry_is_no_longer_scheduled() {
     advance(2_000).await;
     host.set_pending(0);
     advance(6_000).await;
-    assert_eq!(host.auto().failures(), 1, "still failing");
+    assert_eq!(host.auto().backoff_attempts(), 1, "still failing");
     assert!(!host.auto().scheduled(), "nothing armed");
 }

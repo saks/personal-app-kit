@@ -53,19 +53,23 @@ pub fn schedule_after_write<H: Host>(host: &H) {
 /// The app is paused: drop the write timer and `Flush` if anything is
 /// pending.
 ///
-/// The pending check runs inside the kit and has no hook, so an app cannot
-/// act on its answer. octo-budget-rs enqueued its Android background job only
-/// when something was pending (saks/octo-budget-rs#149). With this function
-/// it has two options: call [`Host::pending`] itself before enqueueing,
-/// which counts the pending rows a second time (the kit counts them once
-/// here), or enqueue unconditionally (the job then finds nothing pending).
+/// Counts once, passes that result to [`Host::suspended`], then requests
+/// `Flush` unless the count is `Ok(0)`. A failed count still flushes.
+///
+/// Does nothing when automatic runs are not active
+/// ([`crate::AutoSync::active`] is false): no count, no
+/// [`Host::suspended`], no `Flush`. That is [`crate::Mode::Off`], an
+/// unconfigured gate, or [`crate::Gate::NeedsUser`]. An app that wants a
+/// background job then decides that itself.
 pub fn on_suspended<H: Host>(host: &H) {
     let Some(auto) = active(host) else { return };
     auto.write_timer.cancel();
     let host = host.clone();
     auto.rt.spawn(async move {
+        let pending = host.pending().await;
+        host.suspended(pending.as_ref().copied());
         // A failed count flushes anyway.
-        if !matches!(host.pending().await, Ok(0)) {
+        if !matches!(pending, Ok(0)) {
             request(&host, SyncTrigger::Flush);
         }
     });
