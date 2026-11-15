@@ -8,6 +8,10 @@ pub fn to_turso_values(values: Values) -> Result<Vec<turso::Value>> {
     values.into_iter().map(to_turso_value).collect()
 }
 
+/// Every variant sea-query has with kit-db's features is matched by name.
+/// The last arm catches the variants an app adds by enabling a sea-query
+/// type feature (`with-chrono`, `with-json`, …) through feature
+/// unification: kit-db still compiles and binding one is an error.
 fn to_turso_value(value: Value) -> Result<turso::Value> {
     match value {
         Value::Bool(Some(v)) => Ok(turso::Value::Integer(i64::from(v))),
@@ -42,5 +46,10 @@ fn to_turso_value(value: Value) -> Result<turso::Value> {
         | Value::Bytes(None) => Ok(turso::Value::Null),
         Value::Enum(sea_query::OptionEnum::None(_)) => Ok(turso::Value::Null),
         Value::Enum(sea_query::OptionEnum::Some(_)) => Err(Error::UnsupportedEnum),
+        #[allow(
+            unreachable_patterns,
+            reason = "reachable only when an app enables a sea-query type feature"
+        )]
+        _ => Err(Error::UnsupportedValue),
     }
 }

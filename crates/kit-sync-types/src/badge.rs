@@ -7,9 +7,14 @@ use crate::failure::{FailureClass, FailureKind};
 /// The dock / Settings sync mark.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SyncBadge {
+    /// Sync is not configured on this device.
     Off,
+    /// Nothing waits to be pushed (an earlier ordinary failure included).
     Synced,
+    /// Local changes wait to be pushed; any failure so far is below
+    /// [`BadgePolicy::warn_after`].
     Pending,
+    /// A run is in flight.
     Syncing,
     /// The last run failed with an error that clears by itself, local
     /// changes are still pending, and the streak reached the policy.
@@ -31,27 +36,36 @@ pub struct BadgePolicy {
 pub enum BadgeInput {
     /// Sync is not configured on this device.
     Off,
+    /// Sync is configured; the badge follows this state.
     On(OnState),
 }
 
+/// What the badge reads while Sync is configured.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OnState {
+    /// Whether a run is in flight; a running Sync wins over everything else.
     pub activity: Activity,
+    /// Whether local changes wait to be pushed.
     pub queue: Queue,
+    /// How the last finished run ended.
     pub last: LastRun,
 }
 
 /// Whether a run is in flight (any trigger).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Activity {
+    /// No run in flight.
     Idle,
+    /// A run is in flight.
     Running,
 }
 
 /// Whether local changes wait to be pushed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Queue {
+    /// Nothing waits to be pushed.
     Empty,
+    /// At least one local change waits to be pushed.
     Pending,
 }
 
@@ -60,7 +74,9 @@ pub enum Queue {
 pub enum LastRun {
     /// No run yet, or it synced.
     Clean,
+    /// It failed.
     Failed {
+        /// Whether a retry may clear the failure.
         class: FailureClass,
         /// Consecutive failed runs, this one included.
         streak: u32,

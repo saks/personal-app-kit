@@ -14,6 +14,8 @@ This file is loaded in full on every turn. Keep each rule specific and in one pl
 | Release procedure | `RELEASING.md` |
 | How apps consume the kit | `README.md` |
 
+**Test-only exception to "nothing app-specific":** kit-db's local `tursodb` lookup for host tests names `TURSO_DB_BIN` (`TURSO_DB_BIN_ENV`), the `../e2e/.tursodb/tursodb` path (`workspace_tursodb_bin`) and the `./scripts/fetch-tursodb.sh` hint (`Error::TursodbNotFound`). Both apps share that layout. It is test tooling, not runtime behaviour; keep it to that.
+
 Each new crate sets `version.workspace = true` (and the other `*.workspace` keys) plus `[lints] workspace = true`. Add a row to the crate table in `README.md` in the same change.
 
 ## Design rules
@@ -34,7 +36,7 @@ Each new crate sets `version.workspace = true` (and the other `*.workspace` keys
 ## Build / verify
 
 ```bash
-make check   # layout checks, fmt --check, clippy -D warnings (host + wasm32), cargo test
+make check   # layout checks, fmt --check, clippy -D warnings (host + wasm32), cargo test, cargo doc -D warnings (host + wasm32)
 ```
 
 `make check` is the gate; format before claiming done. Clippy (host + wasm32) and tests run with `--all-features`, so code behind a feature such as `yew` is gated too. GitHub Actions is off on purpose; do not add workflows. Every test run is time-bounded (`TEST_TIMEOUT_S`). A change that alters a public API also needs the matching adoption issue or PR in each app.

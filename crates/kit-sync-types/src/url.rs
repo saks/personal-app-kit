@@ -1,7 +1,6 @@
 //! The sync database URL (from ST `src-tauri/src/settings.rs`).
 
 use std::fmt;
-use std::net::Ipv4Addr;
 use std::str::FromStr;
 
 /// A database URL the sync engines accept: `libsql://`, `https://` or
@@ -12,12 +11,18 @@ use std::str::FromStr;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SyncUrl(String);
 
+/// Why an entered URL was rejected. `Display` is the message for the user.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UrlError {
+    /// Nothing left after trimming the surrounding spaces.
     Empty,
+    /// Spaces (or other whitespace) inside the URL.
     Whitespace,
+    /// `http://` to anything but `127.0.0.1:<port>` or `localhost:<port>`.
     HttpNotLoopback,
+    /// Not `libsql://`, `https://`, `turso://` or loopback `http://`.
     UnknownScheme,
+    /// No host, or a path, query, fragment or `user@` after it.
     HasPathOrCredentials,
 }
 
@@ -42,7 +47,9 @@ impl std::error::Error for UrlError {}
 /// Schemes that need a host and nothing else.
 const HOST_SCHEMES: [&str; 3] = ["libsql://", "https://", "turso://"];
 const LOOPBACK_SCHEME: &str = "http://";
-const LOOPBACK_NAME: &str = "localhost";
+/// The loopback hosts, compared as plain strings: `127.0.0.1` is the only
+/// spelling of the IPv4 loopback that `Ipv4Addr` parsing accepted anyway.
+const LOOPBACK_HOSTS: [&str; 2] = ["127.0.0.1", "localhost"];
 
 impl FromStr for SyncUrl {
     type Err = UrlError;
@@ -85,7 +92,7 @@ fn is_loopback_host_port(rest: &str) -> bool {
     let Some((host, port)) = rest.split_once(':') else {
         return false;
     };
-    let loopback = host == LOOPBACK_NAME || host.parse::<Ipv4Addr>() == Ok(Ipv4Addr::LOCALHOST);
+    let loopback = LOOPBACK_HOSTS.contains(&host);
     loopback && matches!(port.parse::<u16>(), Ok(parsed) if parsed > 0)
 }
 

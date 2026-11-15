@@ -8,6 +8,7 @@ All kit crates share `[workspace.package] version` in the root `Cargo.toml` and 
 - **A breaking change means a new tag.** While the version is `0.y.z`, a breaking change bumps `y` (`v0.1.3` → `v0.2.0`) and anything else bumps `z`. From `1.0.0`, follow semver.
 - A tag is cut only after `make check` passes on the merged `main` and @saks has merged the PR. GitHub Actions is off, so the local gate is the only gate.
 - A pushed tag is never moved, deleted or reused. A bad release is fixed by a new tag.
+- `turso` is pinned `=0.8.3` in the kit (root `Cargo.toml`), so a turso bump lands in the kit and in both apps together.
 
 ## Steps
 

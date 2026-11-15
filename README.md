@@ -44,7 +44,8 @@ Rust stable (pinned in `rust-toolchain.toml`, with `wasm32-unknown-unknown`, rus
 
 ```bash
 make check   # tests-in-tests.rs and no-allow(dead_code) checks, fmt --check,
-             # clippy -D warnings on host and wasm32-unknown-unknown, cargo test
+             # clippy -D warnings on host and wasm32-unknown-unknown, cargo test,
+             # cargo doc -D warnings on host and wasm32-unknown-unknown
 ```
 
 `make check` is the gate. GitHub Actions is off on purpose.
