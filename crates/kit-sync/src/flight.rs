@@ -110,27 +110,34 @@ impl Admission {
     }
 }
 
-/// Ownership of the running flight. Dropping it (a finished drain, a panic,
-/// an aborted task) sets the flight idle, so it can never stay running.
+/// Ownership of the running flight. Dropping it ends the flight, so the
+/// slot cannot stay running.
 ///
 /// # Dropping
 ///
-/// Dropping a `Flight` (a panic, an early return, `let _ =`, or
-/// `matches!(…, Start(_))`) sets the flight idle and drops the queued
-/// trigger. A background job holds it across [`crate::run`] and
-/// [`Flight::next_queued`].
+/// Dropping a `Flight` (a finished drain, a panic, an aborted task, an early
+/// return, `let _ =`, or `matches!(…, Start(_))`, which looks like a check)
+/// sets the flight idle and drops the queued trigger. A background job holds
+/// the `Flight` across [`crate::run`] and [`Flight::next_queued`], and keeps
+/// calling `next_queued` after a failed run:
 ///
-/// ```ignore
+/// ```no_run
+/// # use kit_sync::{AutoSync, Host, run};
+/// # use kit_sync_types::SyncTrigger;
+/// # async fn job<H: Host>(host: &H, auto: &AutoSync, mut trigger: SyncTrigger) {
 /// let Some(mut flight) = auto.admit(trigger).into_flight() else {
 ///     return;
 /// };
-/// run(host, trigger).await?;
-/// while let Some(next) = flight.next_queued() {
-///     run(host, next).await?;
+/// loop {
+///     // `run` already emits the outcome. Returning here would drop `flight`.
+///     let _ = run(host, trigger).await;
+///     match flight.next_queued() {
+///         Some(next) => trigger = next,
+///         None => break,
+///     }
 /// }
+/// # }
 /// ```
-///
-/// `matches!(…, Start(_))` looks like a check and drops the flight.
 #[derive(Debug)]
 #[must_use = "dropping a Flight ends the flight and drops any queued run"]
 pub struct Flight {

@@ -804,29 +804,37 @@ async fn the_exit_flush_queues_no_follow_up() {
     assert!(host.auto().shared.idle(), "no flight during shutdown");
 }
 
+/// A host that keeps [`Host`]'s default `suspended` and `wants_follow_up`.
+#[derive(Clone)]
+struct Plain(Fake);
+
+impl Host for Plain {
+    type Report = Report;
+    type Error = FakeError;
+
+    fn autosync(&self) -> Option<&AutoSync> {
+        self.0.autosync()
+    }
+
+    async fn pending(&self) -> Result<u64, FakeError> {
+        self.0.pending().await
+    }
+
+    async fn sync(&self) -> Result<Report, FakeError> {
+        self.0.sync().await
+    }
+
+    fn emit(&self, event: &SyncEvent<'_, Report, FakeError>) {
+        self.0.emit(event);
+    }
+
+    fn class(&self, error: &FakeError) -> FailureClass {
+        self.0.class(error)
+    }
+}
+
 #[tokio::test(start_paused = true)]
 async fn the_default_host_never_asks_for_a_follow_up() {
-    #[derive(Clone)]
-    struct Plain(Fake);
-    impl Host for Plain {
-        type Report = Report;
-        type Error = FakeError;
-        fn autosync(&self) -> Option<&AutoSync> {
-            self.0.autosync()
-        }
-        async fn pending(&self) -> Result<u64, FakeError> {
-            self.0.pending().await
-        }
-        async fn sync(&self) -> Result<Report, FakeError> {
-            self.0.sync().await
-        }
-        fn emit(&self, event: &SyncEvent<'_, Report, FakeError>) {
-            self.0.emit(event);
-        }
-        fn class(&self, error: &FakeError) -> FailureClass {
-            self.0.class(error)
-        }
-    }
     let fake = Fake::ready();
     fake.0
         .leave_behind
@@ -835,17 +843,22 @@ async fn the_default_host_never_asks_for_a_follow_up() {
     schedule_after_write(&host);
     advance(10_000).await;
     assert_eq!(fake.started(), vec![SyncTrigger::Write]);
-    fake.set_pending(1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_default_suspended_hook_still_flushes() {
+    let fake = Fake::ready();
+    let host = Plain(fake.clone());
     on_suspended(&host);
     advance(1_000).await;
-    assert_eq!(
-        fake.started(),
-        vec![SyncTrigger::Write, SyncTrigger::Flush],
-        "the default suspended hook still flushes"
+    assert_eq!(fake.started(), vec![SyncTrigger::Flush]);
+    assert!(
+        fake.suspended_calls().is_empty(),
+        "the default hook ran, not Fake's"
     );
 }
 
-// --- Added from ST (4): failures (now backoff_attempts()) and scheduled(). ---
+// --- Added from ST (4): `failures` (now `backoff_attempts`) and `scheduled`. ---
 
 #[tokio::test(start_paused = true)]
 async fn status_queries_track_arm_fire_and_reset() {
