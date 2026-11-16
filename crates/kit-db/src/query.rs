@@ -7,9 +7,10 @@
 //! Retrying on busy is app policy (OB's replica sync retries, ST doesn't), so
 //! the pieces are split: [`build`] compiles once, and a [`Prepared`] can run
 //! as many times as the app's retry loop wants. [`query`] and [`execute`] are
-//! the one-shot forms. Failed statements are logged with their SQL and param
-//! kinds (never values); busy failures only at `debug`, since the caller may
-//! retry.
+//! the one-shot forms. Both run the statement to completion: [`query`] returns
+//! every row, and a busy or other execution error comes back from that call.
+//! Failed statements are logged with their SQL and param kinds (never values);
+//! busy failures only at `debug`, since the caller may retry.
 
 mod row;
 mod values;
@@ -85,8 +86,23 @@ impl Prepared {
         &self.params
     }
 
-    /// Run as a query. Can be called again (e.g. by a busy-retry loop).
-    pub async fn query(&self, conn: &Conn) -> Result<turso::Rows> {
+    /// Run the statement and return every row. A busy or other execution
+    /// error comes back from this call. Can be called again (for example by
+    /// a busy-retry loop).
+    pub async fn query(&self, conn: &Conn) -> Result<Vec<turso::Row>> {
+        let mut rows = self.query_rows(conn).await?;
+        let mut out = Vec::new();
+        loop {
+            match rows.next().await {
+                Ok(Some(row)) => out.push(row),
+                Ok(None) => return Ok(out),
+                Err(err) => return Err(self.failed("db.query", err)),
+            }
+        }
+    }
+
+    // Prepare and bind only. `query` steps, so execution errors reach `failed`.
+    async fn query_rows(&self, conn: &Conn) -> Result<turso::Rows> {
         conn.connection()
             .query(&self.sql, params_from_iter(self.params.clone()))
             .await
@@ -127,7 +143,7 @@ fn value_kinds(params: &[turso::Value]) -> String {
         .join(",")
 }
 
-pub async fn query(conn: &Conn, statement: SelectStatement) -> Result<turso::Rows> {
+pub async fn query(conn: &Conn, statement: SelectStatement) -> Result<Vec<turso::Row>> {
     build(statement)?.query(conn).await
 }
 
