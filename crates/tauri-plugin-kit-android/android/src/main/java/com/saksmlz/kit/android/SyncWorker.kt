@@ -11,8 +11,10 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
@@ -33,24 +35,60 @@ class SyncWorker(context: Context, params: WorkerParameters) :
       Log.w(tag, "sync: background job has no native library name")
       return Result.failure()
     }
-    // runSync blocks (the app's run may block_on), so keep it off Default.
-    val code = withContext(Dispatchers.IO) {
-      try {
-        System.loadLibrary(library)
-        runSync(applicationContext.dataDir.absolutePath, applicationContext)
-      } catch (e: UnsatisfiedLinkError) {
-        // Permanent: a missing library or symbol (a forgotten
-        // `background_sync!` shows up here as a dlopen error) stays missing
-        // until a fixed build is installed, so retrying can't fix it.
-        Log.e(tag, "sync: background job could not load the native library; failing", e)
-        FAILURE
+    // A death in `runSync` leaves a count. After five, fail before loading
+    // the library. A caught panic is retried once. Offline RETRY is not counted.
+    val budgetFile = AttemptBudget.file(applicationContext)
+    val begun = AttemptBudget.begin(
+      budgetFile,
+      AttemptBudget.versionCode(applicationContext, tag),
+      tag,
+    )
+    return when (begun) {
+      AttemptBudget.Begin.Stop -> {
+        Log.w(tag, "sync: giving up after a native crash")
+        Result.failure()
       }
+      is AttemptBudget.Begin.Run -> finishRun(tag, library, budgetFile, begun)
     }
-    return when (code) {
-      SUCCESS -> Result.success()
-      RETRY -> Result.retry()
-      FAILURE -> Result.failure()
-      else -> Result.retry()
+  }
+
+  private suspend fun finishRun(
+    tag: String,
+    library: String,
+    budgetFile: File,
+    begun: AttemptBudget.Begin.Run,
+  ): Result {
+    // runSync blocks (the app's run may block_on), so keep it off Default.
+    val code = try {
+      withContext(Dispatchers.IO) {
+        try {
+          System.loadLibrary(library)
+          runSync(applicationContext.dataDir.absolutePath, applicationContext)
+        } catch (e: UnsatisfiedLinkError) {
+          // Permanent: a missing library or symbol (a forgotten
+          // `background_sync!` shows up here as a dlopen error) stays missing
+          // until a fixed build is installed, so retrying can't fix it.
+          Log.e(tag, "sync: background job could not load the native library; failing", e)
+          AttemptBudget.FAILURE
+        }
+      }
+    } catch (e: CancellationException) {
+      // REPLACE cancelled this attempt. Put the crash count back.
+      AttemptBudget.rollback(budgetFile, begun, tag)
+      throw e
+    }
+    return when (val outcome = AttemptBudget.finish(budgetFile, begun, code, tag)) {
+      AttemptBudget.Outcome.Success -> Result.success()
+      AttemptBudget.Outcome.Retry -> Result.retry()
+      AttemptBudget.Outcome.Failure -> Result.failure()
+      AttemptBudget.Outcome.GaveUpOnPanic -> {
+        Log.w(tag, "sync: giving up after a native panic")
+        Result.failure()
+      }
+      is AttemptBudget.Outcome.Unknown -> {
+        Log.e(tag, "sync: unknown result code ${outcome.code}")
+        Result.failure()
+      }
     }
   }
 
@@ -61,11 +99,6 @@ class SyncWorker(context: Context, params: WorkerParameters) :
     private const val KEY_LOG_TAG = "kit.android.log_tag"
     /** Only if the input data has no tag (never from `enqueue`). */
     private const val FALLBACK_TAG = "SyncWorker"
-
-    // tauri_plugin_kit_android::WorkerResult
-    private const val SUCCESS = 0
-    private const val RETRY = 1
-    private const val FAILURE = 2
 
     /** `dataDir` is Tauri's `app_data_dir`. `context` is the application. */
     @JvmStatic
@@ -80,6 +113,8 @@ class SyncWorker(context: Context, params: WorkerParameters) :
       initialDelaySeconds: Long,
       backoffSeconds: Long,
     ) {
+      // A new save replaces the job and starts a fresh crash budget.
+      AttemptBudget.clear(context)
       val request = OneTimeWorkRequestBuilder<SyncWorker>()
         .setInputData(workDataOf(KEY_LIBRARY to library, KEY_LOG_TAG to logTag))
         .setConstraints(

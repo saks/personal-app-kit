@@ -17,10 +17,11 @@
 //!   `Err(EnqueueError::Jni(_))`. Both are logged. Neither panics.
 //! - In a cold process the worker needs no Tauri runtime: it loads the app's
 //!   library, calls `BackgroundSync::init_logs` (if set), then
-//!   `BackgroundSync::run` with the data dir. A panic, in the app's
-//!   registration, its `init_logs` or its run, becomes `WorkerResult::Retry`.
-//!   A library that cannot be loaded fails the job (`SyncWorker` does not
-//!   retry an `UnsatisfiedLinkError`).
+//!   `BackgroundSync::run` with the data dir. A caught panic, in the app's
+//!   registration, its `init_logs` or its run, is retried once, then the job
+//!   fails. A process that aborts on panic dies instead; `SyncWorker` stops
+//!   that job after repeated deaths. A library that cannot be loaded fails
+//!   the job (`SyncWorker` does not retry an `UnsatisfiedLinkError`).
 //!
 //! Device test steps for adopting apps: `docs/android-background-sync-device-test.md`.
 //!

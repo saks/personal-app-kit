@@ -6,6 +6,8 @@ This file starts with the first release. Earlier work is in the git history and 
 
 ## Unreleased
 
+- tauri-plugin-kit-android: a background sync stops when the failure cannot clear itself. An unreadable data dir fails the job. A caught panic is retried once, then the job fails. A process that dies in the native call (release builds abort on panic) stops after five deaths, before the library is loaded again. An unknown result code is logged and fails the job. Offline and busy results still retry with WorkManager's backoff. The next save or pause still replaces the job and starts a fresh budget.
+
 - tauri-plugin-kit-android: `enqueue` returns `Result<(), EnqueueError>`. `NoAndroidContext` means there is no application `Context` yet. `Jni` is the JNI or WorkManager failure as text, so the app does not depend on `jni`. `EnqueueError` is `#[non_exhaustive]`. A failure is still logged at `warn`. Success is `debug` (`sync: background job enqueued`).
 
   Migration: handle the `Result` at each call (`?` or `match`). A `match` needs a catch-all arm. The device-test warm path confirms the job with `dumpsys` or the WorkManager inspector. octo-budget-rs and sickness_tracker do this when they take the next tag.

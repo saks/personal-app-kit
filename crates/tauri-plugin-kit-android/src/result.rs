@@ -7,7 +7,8 @@
 pub enum WorkerResult {
     /// Done: synced, nothing pending, or Sync is off.
     Success = 0,
-    /// Try again with WorkManager's backoff: offline, busy, or a panic.
+    /// Try again with WorkManager's backoff: offline or busy.
+    /// A panic is not a retry. `SyncWorker` handles that on its own.
     Retry = 1,
     /// Retrying can't help until the user acts (token rejected…).
     Failure = 2,
@@ -19,6 +20,15 @@ impl WorkerResult {
         self as i32
     }
 }
+
+/// `AttemptBudget.kt`'s `PANIC`. Not a [`WorkerResult`] variant: the app's
+/// `run` cannot return it. A caught panic uses this code. `SyncWorker`
+/// retries it once, then fails the job.
+///
+/// Host builds omit it: only the Android worker and the tests name it, and
+/// the workspace forbids an unused constant.
+#[cfg(any(target_os = "android", test))]
+pub(crate) const PANIC_CODE: i32 = 3;
 
 #[cfg(test)]
 mod tests;
