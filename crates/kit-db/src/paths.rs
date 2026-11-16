@@ -89,7 +89,11 @@ pub fn workspace_tursodb_bin(manifest_dir: &Path) -> PathBuf {
 }
 
 /// `TURSO_DB_BIN`, then `workspace`, then `~/.turso/tursodb`, then `PATH`.
-pub fn find_tursodb_bin(workspace: &Path) -> Option<PathBuf> {
+///
+/// A set `TURSO_DB_BIN` that is not an existing file is
+/// [`Error::TursodbOverrideMissing`] and does not fall through. Whitespace-only
+/// is unset. `Ok(None)` means the override was unset and every fallback missed.
+pub fn find_tursodb_bin(workspace: &Path) -> Result<Option<PathBuf>> {
     find_tursodb_bin_in(
         std::env::var(TURSO_DB_BIN_ENV).ok().as_deref(),
         std::env::var_os("HOME").as_deref().map(Path::new),
@@ -104,30 +108,35 @@ pub fn find_tursodb_bin_in(
     home: Option<&Path>,
     path_var: Option<&OsStr>,
     workspace: &Path,
-) -> Option<PathBuf> {
-    if let Some(path) = parse_path_override(turso_db_bin)
-        && path.is_file()
-    {
-        return Some(path);
+) -> Result<Option<PathBuf>> {
+    if let Some(path) = parse_path_override(turso_db_bin) {
+        if path.is_file() {
+            return Ok(Some(path));
+        }
+        return Err(Error::TursodbOverrideMissing { path });
     }
     if workspace.is_file() {
-        return Some(workspace.to_path_buf());
+        return Ok(Some(workspace.to_path_buf()));
     }
     if let Some(home) = home {
         let path = home.join(".turso/tursodb");
         if path.is_file() {
-            return Some(path);
+            return Ok(Some(path));
         }
     }
-    std::env::split_paths(path_var?)
+    let Some(path_var) = path_var else {
+        return Ok(None);
+    };
+    Ok(std::env::split_paths(path_var)
         .map(|dir| dir.join("tursodb"))
-        .find(|candidate| candidate.is_file())
+        .find(|candidate| candidate.is_file()))
 }
 
 /// The CLI for a host test that needs it. The app's test unwraps, so a
-/// missing CLI fails loudly with the fetch hint instead of skipping.
+/// missing CLI fails loudly with the fetch hint instead of skipping. A set
+/// `TURSO_DB_BIN` that is not a file is [`Error::TursodbOverrideMissing`].
 pub fn tursodb_bin_for_test(test_name: &str, workspace: &Path) -> Result<PathBuf> {
-    find_tursodb_bin(workspace).ok_or_else(|| Error::TursodbNotFound {
+    find_tursodb_bin(workspace)?.ok_or_else(|| Error::TursodbNotFound {
         test: test_name.to_owned(),
         workspace: workspace.to_path_buf(),
     })

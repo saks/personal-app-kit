@@ -6,6 +6,10 @@ This file starts with the first release. Earlier work is in the git history and 
 
 ## Unreleased
 
+- kit-db: a set `TURSO_DB_BIN` that is not an existing file is `Error::TursodbOverrideMissing` and does not fall through to the workspace binary, `~/.turso/tursodb`, or `PATH`. `find_tursodb_bin` and `find_tursodb_bin_in` return `Result<Option<PathBuf>>`. `Ok(None)` still means the override was unset and every fallback missed. `tursodb_bin_for_test` returns the override error as-is, and still returns `Error::TursodbNotFound` in that miss case. The not-found message names the workspace path, `~/.turso/tursodb`, and `PATH`.
+
+  Migration: handle the `Result`. Apps that still use their own `#[cfg(test)]` copy are unchanged until they call the kit helper.
+
 - kit-db: `with_transaction` and `in_transaction` pass a `Tx` into the closure. `Tx` runs statements on the open transaction and has no `connection()`. `BEGIN`, `COMMIT`, `END`, `ROLLBACK`, `SAVEPOINT`, and `RELEASE` on it return `Error::TransactionControl`. `begin` while a transaction is already open returns `Error::NestedTransaction`. A dangling rollback from a cancel is still applied before the next `BEGIN`.
 
   Migration:
