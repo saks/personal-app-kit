@@ -40,43 +40,52 @@ fn panicking_registration() -> BackgroundSync {
 fn the_app_result_is_passed_through_with_the_data_dir() {
     assert_eq!(
         run(needs_dir_job, Ok("/data/app".into())),
-        WorkerResult::Failure
+        RunOutcome::Finished(WorkerResult::Failure)
     );
     assert_eq!(
         run(needs_dir_job, Ok("/elsewhere".into())),
-        WorkerResult::Success
+        RunOutcome::Finished(WorkerResult::Success)
     );
 }
 
 #[test]
-fn a_panic_becomes_retry() {
+fn a_panic_is_reported() {
     assert_eq!(
         run(panicking_job, Ok("/data/app".into())),
-        WorkerResult::Retry
+        RunOutcome::Panicked
     );
 }
 
 #[test]
-fn a_panic_in_the_registration_becomes_retry() {
+fn a_panic_code_matches_sync_worker_kt() {
+    assert_eq!(
+        RunOutcome::Panicked.code(),
+        crate::result::PANIC_CODE,
+        "AttemptBudget.kt's PANIC"
+    );
+}
+
+#[test]
+fn a_panic_in_the_registration_is_reported() {
     assert_eq!(
         run(panicking_registration, Ok("/data/app".into())),
-        WorkerResult::Retry
+        RunOutcome::Panicked
     );
     assert_eq!(
         run(panicking_registration, Err(NoDataDir::Panicked)),
-        WorkerResult::Retry
+        RunOutcome::Panicked
     );
 }
 
 #[test]
-fn no_data_dir_retries_without_running() {
+fn no_data_dir_does_not_run() {
     assert_eq!(
         run(panicking_job, Err(NoDataDir::Unreadable("null".into()))),
-        WorkerResult::Retry
+        RunOutcome::Finished(WorkerResult::Failure)
     );
     assert_eq!(
         run(panicking_job, Err(NoDataDir::Panicked)),
-        WorkerResult::Retry
+        RunOutcome::Panicked
     );
 }
 
@@ -121,7 +130,7 @@ fn init_logs_runs_once_before_the_app_run() {
     LOGS_READY.with(|calls| calls.set(0));
     assert_eq!(
         run(logging_job, Ok("/data/app".into())),
-        WorkerResult::Success
+        RunOutcome::Finished(WorkerResult::Success)
     );
     assert_eq!(LOGS_READY.with(std::cell::Cell::get), 1);
 }
@@ -131,7 +140,7 @@ fn init_logs_runs_even_without_a_data_dir() {
     LOGS_READY.with(|calls| calls.set(0));
     assert_eq!(
         run(logging_job, Err(NoDataDir::Unreadable("null".into()))),
-        WorkerResult::Retry
+        RunOutcome::Finished(WorkerResult::Failure)
     );
     assert_eq!(
         LOGS_READY.with(std::cell::Cell::get),
@@ -145,14 +154,14 @@ fn without_init_logs_the_run_starts_directly() {
     LOGS_READY.with(|calls| calls.set(0));
     assert_eq!(
         run(|| job(needs_logs), Ok("/data/app".into())),
-        WorkerResult::Failure
+        RunOutcome::Finished(WorkerResult::Failure)
     );
 }
 
 #[test]
-fn a_panic_in_init_logs_becomes_retry() {
+fn a_panic_in_init_logs_is_reported() {
     assert_eq!(
         run(panicking_logs_job, Ok("/data/app".into())),
-        WorkerResult::Retry
+        RunOutcome::Panicked
     );
 }
