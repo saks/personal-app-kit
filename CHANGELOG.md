@@ -6,6 +6,7 @@ This file starts with the first release. Earlier work is in the git history and 
 
 ## Unreleased
 
+- kit-sync: `on_suspended` ends the `Auto` debounce window while automatic runs are active, so the next resume syncs after a suspend even when the monotonic clock barely moved.
 - kit-sync: `Host::suspended` receives the one pending count from `on_suspended`, then `Flush` runs unless the count is `Ok(0)`. Not called when automatic runs are inactive. octo-budget-rs moves `android_sync::enqueue()` into `Host::suspended`, enqueues when the count isn't `Ok(0)`, and drops its extra `pending()` call. (#18)
 - kit-sync: `AutoSync::backoff_attempts` is the backoff counter (renamed from `failures`). It is not a UI failure streak. (#18)
 - kit-sync-types: `SyncTrigger::from_host` is dropped. That routing is sickness_tracker-specific and wrong for apps that start `Auto`/`Online` from the host; keep the rule in the app. (#18)

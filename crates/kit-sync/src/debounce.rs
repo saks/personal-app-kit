@@ -41,11 +41,19 @@ impl Debounce {
             }
         }
     }
+
+    /// Forget when the last `Auto` ran. The next `due` admits one.
+    pub(crate) fn end_window(&self) {
+        *lock(&self.last_auto) = None;
+    }
 }
 
 /// The app came back to the foreground (Android `Resumed`, first load):
-/// `Auto`, debounced. Restarts the backoff; when `Auto` is debounced, a
-/// stored retry (even one that already fired) comes back at the first step.
+/// `Auto`, debounced. A suspend while automatic runs were active ends that
+/// window, so the first resume after it runs. Bursts that never suspend stay
+/// collapsed for [`crate::SyncPolicy::auto_debounce`]. Restarts the backoff;
+/// when `Auto` is debounced, a stored retry (even one that already fired)
+/// comes back at the first step.
 pub fn on_resumed<H: Host>(host: &H) {
     let Some(auto) = active(host) else { return };
     let retrying = auto.backoff.retrying();

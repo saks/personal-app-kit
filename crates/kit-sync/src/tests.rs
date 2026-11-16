@@ -82,6 +82,22 @@ async fn auto_is_debounced() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn suspend_ends_the_auto_window() {
+    let host = Fake::ready();
+    host.set_pending(0);
+    on_first_load(&host);
+    advance(1_000).await;
+    on_suspended(&host);
+    advance(1_000).await;
+    on_resumed(&host);
+    advance(1_000).await;
+    on_resumed(&host);
+    advance(1_000).await;
+    assert_eq!(host.started(), vec![SyncTrigger::Auto, SyncTrigger::Auto]);
+    assert_eq!(host.suspended_calls(), vec![Ok(0)]);
+}
+
+#[tokio::test(start_paused = true)]
 async fn write_and_flush_are_not_debounced() {
     let host = Fake::ready();
     for _ in 0..2 {

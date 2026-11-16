@@ -13,7 +13,10 @@ pub struct SyncPolicy {
     /// save).
     pub write_delay: Duration,
     /// `Auto` runs (resume, first load) at most once per this window, counted
-    /// from the last `Auto`.
+    /// from the last admitted `Auto` on the monotonic clock. That clock does
+    /// not move during suspend, so [`crate::on_suspended`] ends the window
+    /// while automatic runs are active and the next resume runs. Resumes that
+    /// never suspend, including first load, stay collapsed for this long.
     pub auto_debounce: Duration,
     /// Retry delays after the 1st, 2nd, … automatic failure in a row.
     pub retry_steps: RetrySteps,

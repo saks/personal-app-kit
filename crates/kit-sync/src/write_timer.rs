@@ -50,19 +50,23 @@ pub fn schedule_after_write<H: Host>(host: &H) {
     auto.write_timer.replace(timer.abort_handle());
 }
 
-/// The app is paused: drop the write timer and `Flush` if anything is
-/// pending.
+/// The app is paused: end the `Auto` window, drop the write timer, and
+/// `Flush` if anything is pending.
+///
+/// The window ends on this call, before the spawned task, so the next
+/// resume runs `Auto` even when the monotonic clock barely moved.
 ///
 /// Counts once, passes that result to [`Host::suspended`], then requests
 /// `Flush` unless the count is `Ok(0)`. A failed count still flushes.
 ///
 /// Does nothing when automatic runs are not active
 /// ([`crate::AutoSync::active`] is false): no count, no
-/// [`Host::suspended`], no `Flush`. That is [`crate::Mode::Off`], an
-/// unconfigured gate, or [`crate::Gate::NeedsUser`]. An app that wants a
-/// background job then decides that itself.
+/// [`Host::suspended`], no `Flush`, and the `Auto` window stays. That is
+/// [`crate::Mode::Off`], an unconfigured gate, or [`crate::Gate::NeedsUser`].
+/// An app that wants a background job then decides that itself.
 pub fn on_suspended<H: Host>(host: &H) {
     let Some(auto) = active(host) else { return };
+    auto.debounce.end_window();
     auto.write_timer.cancel();
     let host = host.clone();
     auto.rt.spawn(async move {
