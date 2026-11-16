@@ -56,22 +56,31 @@ pub extern "system" fn Java_com_saksmlz_kit_android_SyncWorker_runSync<'local>(
 ) -> jint {
     // `EnvUnowned` is the FFI-safe pointer. `try_to_string` needs an `Env`.
     // Noting the context here also sets this crate's `JavaVM` singleton
-    // (`AttachGuard`), before `init_logs` or the app's run.
-    let data_dir = match unowned_env
-        .with_env_no_catch(|env| {
-            if let Err(err) = process::note(env, &context) {
-                warn!(error = %err, "sync: could not keep the application context");
-            }
-            data_dir.try_to_string(env)
-        })
-        .into_outcome()
-    {
+    // (`AttachGuard`), before `init_logs` or the app's run. `with_env`
+    // catches a panic in this closure. `with_env_no_catch` never builds
+    // `Outcome::Panic`, so that arm would be dead and a panic would abort
+    // out of this `extern "system"` function.
+    let data_dir = data_dir_from(
+        unowned_env
+            .with_env(|env| {
+                if let Err(err) = process::note(env, &context) {
+                    warn!(error = %err, "sync: could not keep the application context");
+                }
+                data_dir.try_to_string(env)
+            })
+            .into_outcome(),
+    );
+    // `registered` runs inside the worker's `catch_unwind`.
+    worker::run(registered, data_dir).code()
+}
+
+/// The data dir `runSync` read, or why that read did not yield one.
+fn data_dir_from(outcome: Outcome<String, jni::errors::Error>) -> Result<String, NoDataDir> {
+    match outcome {
         Outcome::Ok(dir) => Ok(dir),
         Outcome::Err(err) => Err(NoDataDir::Unreadable(err.to_string())),
         Outcome::Panic(_) => Err(NoDataDir::Panicked),
-    };
-    // `registered` runs inside the worker's `catch_unwind`.
-    worker::run(registered, data_dir).code()
+    }
 }
 
 /// `SyncWorker.enqueue(..)`: one network-constrained job, replacing any
