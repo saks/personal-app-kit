@@ -13,6 +13,8 @@ fn typed_and_text_busy_errors_are_busy() {
     );
     assert!(!Error::from(turso::Error::Error("no such table: t".into())).is_busy());
     assert!(!Error::NotANumber.is_busy());
+    assert!(!Error::NestedTransaction.is_busy());
+    assert!(!Error::TransactionControl.is_busy());
 }
 
 #[test]
@@ -33,5 +35,13 @@ fn messages_match_the_apps() {
         }
         .to_string(),
         "MY_APP_CLOCK must be YYYY-MM-DD"
+    );
+    assert_eq!(
+        Error::NestedTransaction.to_string(),
+        "cannot start a transaction within a transaction"
+    );
+    assert_eq!(
+        Error::TransactionControl.to_string(),
+        "transaction control statements are not allowed inside a transaction"
     );
 }

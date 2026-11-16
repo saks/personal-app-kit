@@ -6,6 +6,16 @@ This file starts with the first release. Earlier work is in the git history and 
 
 ## Unreleased
 
+- kit-db: `with_transaction` and `in_transaction` pass a `Tx` into the closure. `Tx` runs statements on the open transaction and has no `connection()`. `BEGIN`, `COMMIT`, `END`, `ROLLBACK`, `SAVEPOINT`, and `RELEASE` on it return `Error::TransactionControl`. `begin` while a transaction is already open returns `Error::NestedTransaction`. A dangling rollback from a cancel is still applied before the next `BEGIN`.
+
+  Migration:
+
+  1. The closure takes `kit_db::query::Tx`, not `&Conn`.
+  2. Sea-query and `Prepared` calls pass that `Tx` (`execute(tx, stmt)`, `prepared.execute(tx)`).
+  3. Replace `tx.connection().execute` / `.query` inside the closure with `tx.execute_raw` / `tx.query_raw`. `query_raw` returns every row.
+  4. `BEGIN`, `COMMIT`, `END`, `ROLLBACK`, `SAVEPOINT`, and `RELEASE` on `Tx` return `Error::TransactionControl`.
+  5. `begin` or `with_transaction` while a transaction is already open returns `Error::NestedTransaction`.
+
 - tauri-plugin-kit-android: a background sync stops when the failure cannot clear itself. An unreadable data dir fails the job. A caught panic is retried once, then the job fails. A process that dies in the native call (release builds abort on panic) stops after five deaths, before the library is loaded again. An unknown result code is logged and fails the job. Offline and busy results still retry with WorkManager's backoff. The next save or pause still replaces the job and starts a fresh budget.
 
 - tauri-plugin-kit-android: `Schedule`'s fields are private. Build one with `schedule!` (checked at compile time) or `Schedule::new`. Both delays are a whole number of milliseconds. Backoff must be from 10 s to 5 h, WorkManager's own limits. The initial delay must be at most `Schedule::MAX_INITIAL_DELAY`, which `setInitialDelay` accepts. The bridge sends milliseconds, so 10900 ms stays 10900 ms.
@@ -31,7 +41,7 @@ This file starts with the first release. Earlier work is in the git history and 
 
   1. Wrap `database.connect()` in `kit_db::query::Conn::new`.
   2. Pass `&Conn` to `query`, `execute`, `Prepared::query`, `Prepared::execute`, `begin`, `with_transaction`, and `in_transaction`.
-  3. The closure receives `&Conn`. Use `query` / `execute` for sea-query, or `tx.connection()` for raw SQL.
+  3. The closure receives `Tx`. Pass it to `query` / `execute`, or use `Tx::execute_raw` / `Tx::query_raw` for raw SQL.
   4. Share the handle with `Conn::clone`. Do not call `Connection::clone` on `connection()`.
   5. After a cancel or panic, the next statement on any clone rolls the open transaction back and then runs. Do not treat the connection as failed, and do not `COMMIT` to finish a cancelled transaction.
 

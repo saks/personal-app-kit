@@ -9,6 +9,16 @@ use std::path::PathBuf;
 pub enum Error {
     #[error(transparent)]
     Turso(#[from] turso::Error),
+    /// `BEGIN` while this connection already has a transaction open.
+    ///
+    /// A cancelled transaction is not this case: its rollback runs on the
+    /// next `BEGIN`, and that `BEGIN` starts a new transaction.
+    #[error("cannot start a transaction within a transaction")]
+    NestedTransaction,
+    /// `BEGIN`, `COMMIT`, `END`, `ROLLBACK`, `SAVEPOINT`, or `RELEASE` passed
+    /// to a transaction handle.
+    #[error("transaction control statements are not allowed inside a transaction")]
+    TransactionControl,
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("{0}")]
