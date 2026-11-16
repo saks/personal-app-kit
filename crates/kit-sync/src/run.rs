@@ -11,9 +11,11 @@ use crate::host::{Host, Outcome, SyncEvent};
 /// The only way a Sync runs. Emits `Started`, runs one [`Host::sync`], emits
 /// `Finished`. A success resets the backoff and clears `NeedsUser`, and may
 /// queue one follow-up ([`Host::wants_follow_up`]); a `NeedsUser` failure
-/// closes the gate and drops any armed retry. A Manual run calls this
-/// directly (it is not admitted into the flight; the app's engine lock keeps
-/// it from overlapping) and never arms a retry.
+/// closes the gate and drops any armed retry. A run that started before the
+/// latest [`crate::settings_saved`] does neither: that save owns the gate
+/// and the backoff. A Manual run calls this directly (it is not admitted
+/// into the flight; the app's engine lock keeps it from overlapping) and
+/// never arms a retry.
 ///
 /// The follow-up is always automatic: after a Manual run it is queued as
 /// `Write` (the rows it covers were saved during the push), so the UI sees
@@ -22,11 +24,16 @@ use crate::host::{Host, Outcome, SyncEvent};
 pub async fn run<H: Host>(host: &H, trigger: SyncTrigger) -> Result<H::Report, H::Error> {
     info!(?trigger, "sync: start");
     host.emit(&SyncEvent::Started { trigger });
+    // Recorded before `sync`, so a `settings_saved` during the run makes this
+    // outcome stale.
+    let seen = host.autosync().map(|auto| auto.shared.epoch());
     let result = host.sync().await;
     match &result {
         Ok(report) => {
-            if let Some(auto) = host.autosync() {
-                auto.shared.clear_needs_user();
+            if let Some(auto) = host.autosync()
+                && let Some(seen) = seen
+                && auto.shared.clear_needs_user(seen)
+            {
                 auto.backoff.reset();
             }
             info!(?trigger, "sync: finished");
@@ -40,8 +47,10 @@ pub async fn run<H: Host>(host: &H, trigger: SyncTrigger) -> Result<H::Report, H
         }
         Err(error) => {
             let class = host.class(error);
-            if let (Some(auto), FailureClass::NeedsUser) = (host.autosync(), class) {
-                auto.shared.needs_user();
+            if let (Some(auto), FailureClass::NeedsUser) = (host.autosync(), class)
+                && let Some(seen) = seen
+                && auto.shared.needs_user(seen)
+            {
                 auto.backoff.reset();
             }
             warn!(?trigger, ?class, %error, "sync: failed");
@@ -118,10 +127,17 @@ pub(crate) fn request<H: Host>(host: &H, trigger: SyncTrigger) {
 /// Run `trigger`, then whatever queues behind it, until the flight ends.
 async fn drive<H: Host>(host: H, mut flight: Flight, mut trigger: SyncTrigger) {
     loop {
+        // Same epoch `run` records: a `settings_saved` during `sync` must not
+        // re-arm a retry this save already dropped.
+        let seen = host.autosync().map(|auto| auto.shared.epoch());
         // `run` already logs and emits the outcome.
         if let Err(error) = run(&host, trigger).await
             && trigger.automatic()
             && host.class(&error) == FailureClass::ClearsByItself
+            && host
+                .autosync()
+                .zip(seen)
+                .is_some_and(|(auto, seen)| auto.shared.epoch() == seen)
         {
             arm_retry(&host);
         }

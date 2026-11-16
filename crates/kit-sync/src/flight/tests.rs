@@ -62,7 +62,7 @@ fn a_closed_gate_ends_the_flight() {
         Shared::admit(&shared, SyncTrigger::Write),
         Admission::Joined
     ));
-    shared.needs_user();
+    shared.needs_user(shared.epoch());
     assert_eq!(flight.next_queued(), None);
     assert!(shared.idle());
 }
@@ -121,14 +121,48 @@ fn an_ended_flight_leaves_the_next_one_alone() {
 #[test]
 fn the_gate_moves_only_between_ready_and_needs_user() {
     let shared = Shared::new(Mode::On, Gate::Unconfigured, 5);
-    shared.needs_user();
+    shared.needs_user(shared.epoch());
     assert!(!shared.active());
-    shared.clear_needs_user();
+    shared.clear_needs_user(shared.epoch());
     assert!(!shared.active(), "Unconfigured stays");
     shared.set_gate(Gate::Ready);
-    shared.needs_user();
+    shared.needs_user(shared.epoch());
     assert!(!shared.active());
-    shared.clear_needs_user();
+    shared.clear_needs_user(shared.epoch());
     assert!(shared.active());
     assert!(!Shared::new(Mode::Off, Gate::Ready, 5).active());
+}
+
+#[test]
+fn a_stale_needs_user_leaves_ready_after_a_settings_save() {
+    let shared = shared(5);
+    let seen = shared.epoch();
+    shared.set_gate(Gate::Ready);
+    assert!(shared.active());
+    assert!(!shared.needs_user(seen));
+    assert!(shared.active());
+}
+
+#[test]
+fn a_stale_success_leaves_needs_user() {
+    let shared = shared(5);
+    let seen = shared.epoch();
+    assert!(shared.needs_user(seen));
+    assert!(!shared.active());
+    assert!(!shared.clear_needs_user(seen));
+    assert!(!shared.active());
+}
+
+#[test]
+fn a_stale_needs_user_keeps_the_queued_settings_run() {
+    let shared = shared(5);
+    let mut flight = start(&shared);
+    let seen = shared.epoch();
+    shared.set_gate(Gate::Ready);
+    assert!(matches!(
+        Shared::admit(&shared, SyncTrigger::Settings),
+        Admission::Joined
+    ));
+    assert!(!shared.needs_user(seen));
+    assert_eq!(flight.next_queued(), Some(SyncTrigger::Settings));
 }

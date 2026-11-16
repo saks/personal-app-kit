@@ -25,14 +25,16 @@ pub enum Gate {
     /// Set up and working (as far as we know).
     Ready,
     /// The last run failed in a way only the user can fix. Cleared by
-    /// [`settings_saved`] or a successful run.
+    /// [`settings_saved`] or a successful run that started after the latest
+    /// save.
     NeedsUser,
 }
 
 /// The app saved its settings: take the new `gate`, clear `NeedsUser`, drop
 /// any armed retry, and start a `Settings` run if Sync stays on and anything
 /// is pending. Spawns, so the run waits for a lock the caller may still hold
-/// instead of deadlocking.
+/// instead of deadlocking. A run already in flight does not overwrite this
+/// gate or re-arm the backoff when it finishes.
 pub fn settings_saved<H: Host>(host: &H, gate: Gate) {
     let Some(auto) = host.autosync() else { return };
     auto.shared.set_gate(gate);

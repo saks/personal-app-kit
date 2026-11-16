@@ -17,12 +17,23 @@ enum Slot {
     Queued(SyncTrigger),
 }
 
+/// Gate plus the generation of the last change. One mutex so a run can
+/// apply its outcome only when the generation it recorded is still current.
+#[derive(Debug)]
+struct GateState {
+    gate: Gate,
+    /// Bumped by [`Shared::set_gate`] and by a gate transition from a run. A
+    /// run records it before `sync` and applies its outcome only when it
+    /// still matches.
+    epoch: u64,
+}
+
 /// Flight state shared with the [`Flight`] guard, which outlives the borrow
 /// of [`crate::AutoSync`] (it moves into the spawned run).
 #[derive(Debug)]
 pub(crate) struct Shared {
     mode: Mode,
-    gate: Mutex<Gate>,
+    gate: Mutex<GateState>,
     slot: Mutex<Slot>,
     max_follow_ups: u32,
 }
@@ -31,34 +42,55 @@ impl Shared {
     pub(crate) fn new(mode: Mode, gate: Gate, max_follow_ups: u32) -> Self {
         Self {
             mode,
-            gate: Mutex::new(gate),
+            gate: Mutex::new(GateState { gate, epoch: 0 }),
             slot: Mutex::new(Slot::Idle),
             max_follow_ups,
         }
     }
 
     pub(crate) fn active(&self) -> bool {
-        self.mode == Mode::On && *lock(&self.gate) == Gate::Ready
+        self.mode == Mode::On && lock(&self.gate).gate == Gate::Ready
     }
 
+    pub(crate) fn epoch(&self) -> u64 {
+        lock(&self.gate).epoch
+    }
+
+    /// Store `gate` and bump the epoch, even when the value is unchanged: a
+    /// settings save is a new generation (`Ready` → `Ready` still invalidates
+    /// an in-flight run).
     pub(crate) fn set_gate(&self, gate: Gate) {
-        *lock(&self.gate) = gate;
+        let mut state = lock(&self.gate);
+        state.gate = gate;
+        state.epoch = state.epoch.wrapping_add(1);
     }
 
-    /// `NeedsUser` back to `Ready` (a run succeeded).
-    pub(crate) fn clear_needs_user(&self) {
-        let mut gate = lock(&self.gate);
-        if *gate == Gate::NeedsUser {
-            *gate = Gate::Ready;
+    /// `NeedsUser` back to `Ready` when `seen` is still current. Returns
+    /// whether `seen` matches; bumps the epoch only when the gate changes.
+    pub(crate) fn clear_needs_user(&self, seen: u64) -> bool {
+        let mut state = lock(&self.gate);
+        if state.epoch != seen {
+            return false;
         }
+        if state.gate == Gate::NeedsUser {
+            state.gate = Gate::Ready;
+            state.epoch = state.epoch.wrapping_add(1);
+        }
+        true
     }
 
-    /// `Ready` to `NeedsUser` (a run failed in a way only the user can fix).
-    pub(crate) fn needs_user(&self) {
-        let mut gate = lock(&self.gate);
-        if *gate == Gate::Ready {
-            *gate = Gate::NeedsUser;
+    /// `Ready` to `NeedsUser` when `seen` is still current. Returns whether
+    /// `seen` matches; bumps the epoch only when the gate changes.
+    pub(crate) fn needs_user(&self, seen: u64) -> bool {
+        let mut state = lock(&self.gate);
+        if state.epoch != seen {
+            return false;
         }
+        if state.gate == Gate::Ready {
+            state.gate = Gate::NeedsUser;
+            state.epoch = state.epoch.wrapping_add(1);
+        }
+        true
     }
 
     pub(crate) fn admit(shared: &Arc<Self>, trigger: SyncTrigger) -> Admission {

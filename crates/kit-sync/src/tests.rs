@@ -368,6 +368,81 @@ async fn settings_saved_drops_an_armed_retry() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn an_in_flight_needs_user_does_not_undo_settings_saved() {
+    let host = Fake::new(
+        Mode::On,
+        Gate::Ready,
+        Behavior::PauseThen {
+            takes: Duration::from_secs(5),
+            error: FakeError::RejectToken,
+        },
+    );
+    host.set_pending(1);
+    settings_saved(&host, Gate::Ready);
+    advance(1).await;
+    assert_eq!(host.started(), vec![SyncTrigger::Settings]);
+
+    host.behave(Behavior::Succeed {
+        takes: Duration::ZERO,
+    });
+    settings_saved(&host, Gate::Ready);
+    advance(1).await;
+    assert_eq!(host.started(), vec![SyncTrigger::Settings]);
+
+    advance(5_000).await;
+    advance(1).await;
+    assert!(
+        host.auto().active(),
+        "the stale 401 does not close the gate"
+    );
+    assert_eq!(
+        host.started(),
+        vec![SyncTrigger::Settings, SyncTrigger::Settings]
+    );
+    assert_eq!(
+        host.finished(),
+        vec![
+            Seen::Failed(
+                SyncTrigger::Settings,
+                FailureClass::NeedsUser,
+                FakeError::RejectToken
+            ),
+            synced(SyncTrigger::Settings, 1),
+        ]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_in_flight_offline_failure_does_not_rearm_after_settings_saved() {
+    let host = Fake::new(
+        Mode::On,
+        Gate::Ready,
+        Behavior::PauseThen {
+            takes: Duration::from_secs(5),
+            error: FakeError::Offline,
+        },
+    );
+    host.set_pending(1);
+    settings_saved(&host, Gate::Ready);
+    advance(1).await;
+    assert_eq!(host.started(), vec![SyncTrigger::Settings]);
+
+    host.set_pending(0);
+    settings_saved(&host, Gate::Ready);
+    advance(1).await;
+    advance(5_000).await;
+    advance(1).await;
+    assert_eq!(host.auto().backoff_attempts(), 0);
+    host.set_pending(1);
+    advance(60_000).await;
+    assert_eq!(
+        host.started(),
+        vec![SyncTrigger::Settings],
+        "the stale failure never arms a retry"
+    );
+}
+
+#[tokio::test(start_paused = true)]
 async fn settings_saved_returns_while_the_engine_lock_is_held() {
     // The app may hold its engine lock across `settings_saved`. The Settings
     // run must spawn and wait, not take the lock on this stack.

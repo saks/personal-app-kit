@@ -21,6 +21,12 @@ pub(super) enum Behavior {
     RejectToken,
     /// Offline / 5xx: clears by itself.
     Offline,
+    /// Hold the engine lock, wait `takes`, then fail as `error`. A test
+    /// saves settings while the run is in flight.
+    PauseThen {
+        takes: Duration,
+        error: FakeError,
+    },
     Hang,
     Panic,
 }
@@ -218,6 +224,10 @@ impl Host for Fake {
             }
             Behavior::RejectToken => Err(FakeError::RejectToken),
             Behavior::Offline => Err(FakeError::Offline),
+            Behavior::PauseThen { takes, error } => {
+                tokio::time::sleep(takes).await;
+                Err(error)
+            }
             Behavior::Hang => std::future::pending().await,
             Behavior::Panic => panic!("the engine panicked"),
         }

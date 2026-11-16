@@ -127,7 +127,8 @@ impl AutoSync {
     /// - [`on_online`], while automatic runs are active;
     /// - [`settings_saved`], whenever the scheduler exists;
     /// - a successful [`run`], including Manual;
-    /// - a [`run`] that fails as `NeedsUser`.
+    /// - a [`run`] that fails as `NeedsUser`, when that run started after
+    ///   the latest [`settings_saved`].
     ///
     /// A retry that fires and finds nothing pending leaves this count. The
     /// next automatic failure that clears by itself continues from it.
