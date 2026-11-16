@@ -1,7 +1,7 @@
 //! Host-side Turso helpers shared by both apps (sickness_tracker#97).
 //!
-//! - `query`: compile sea-query statements to SQL + Turso params, run them,
-//!   read typed columns, and run a closure in a transaction.
+//! - `query`: a shared `Conn`, compile sea-query statements to SQL + Turso
+//!   params, run them, read typed columns, and run a closure in a transaction.
 //! - `certs`: the Mozilla CA bundle Turso's sync TLS needs on Android.
 //! - `paths`: `<PREFIX>_DATA_DIR` / `_DB_PATH` / `_CLOCK` overrides from an
 //!   `kit_core::EnvPrefix`, and the local `tursodb` CLI lookup for tests.

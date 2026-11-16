@@ -6,6 +6,16 @@ This file starts with the first release. Earlier work is in the git history and 
 
 ## Unreleased
 
+- kit-db: `query`, `execute`, `Prepared::query`, `Prepared::execute`, `begin`, and `with_transaction` take `&Conn` instead of `&turso::Connection`. `in_transaction` takes `&Conn` and the transaction. `Conn` clones share one connection, so a cancelled or panicking transaction rolls back on the next statement of any clone instead of dropping that clone's write.
+
+  Migration:
+
+  1. Wrap `database.connect()` in `kit_db::query::Conn::new`.
+  2. Pass `&Conn` to `query`, `execute`, `Prepared::query`, `Prepared::execute`, `begin`, `with_transaction`, and `in_transaction`.
+  3. The closure receives `&Conn`. Use `query` / `execute` for sea-query, or `tx.connection()` for raw SQL.
+  4. Share the handle with `Conn::clone`. Do not call `Connection::clone` on `connection()`.
+  5. After a cancel or panic, the next statement on any clone rolls the open transaction back and then runs. Do not treat the connection as failed, and do not `COMMIT` to finish a cancelled transaction.
+
 - kit-db: an engine-side rollback (for example `ON CONFLICT ROLLBACK`) no longer leaves the connection failing every later call. `in_transaction` still returns the closure's error.
 - kit-sync: `on_suspended` ends the `Auto` debounce window while automatic runs are active, so the next resume syncs after a suspend even when the monotonic clock barely moved.
 - kit-sync: `Host::suspended` receives the one pending count from `on_suspended`, then `Flush` runs unless the count is `Ok(0)`. Not called when automatic runs are inactive. octo-budget-rs moves `android_sync::enqueue()` into `Host::suspended`, enqueues when the count isn't `Ok(0)`, and drops its extra `pending()` call. (#18)

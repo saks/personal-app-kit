@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use sea_query::{Alias, Enum, Expr, ExprTrait, OptionEnum, Query, Value, Values};
 
 use super::*;
@@ -12,20 +14,82 @@ impl From<Error> for AppError {
     }
 }
 
-async fn memory_conn() -> Connection {
+async fn memory_conn() -> Conn {
     let db = turso::Builder::new_local(":memory:").build().await.unwrap();
-    db.connect().unwrap()
+    Conn::new(db.connect().unwrap())
 }
 
-async fn count(conn: &Connection) -> i64 {
-    let mut rows = conn.query("SELECT COUNT(*) FROM t", ()).await.unwrap();
+async fn exec(conn: &Conn, sql: &str) {
+    conn.connection().execute(sql, ()).await.unwrap();
+}
+
+async fn count(conn: &Conn) -> i64 {
+    let mut rows = conn
+        .connection()
+        .query("SELECT COUNT(*) FROM t", ())
+        .await
+        .unwrap();
     let row = rows.next().await.unwrap().unwrap();
     optional_i64(&row, 0).unwrap().unwrap()
 }
 
-async fn one_row(conn: &Connection, sql: &str) -> turso::Row {
-    let mut rows = conn.query(sql, ()).await.unwrap();
+async fn nums(conn: &Conn) -> Vec<i64> {
+    let mut rows = conn
+        .connection()
+        .query("SELECT n FROM t ORDER BY n", ())
+        .await
+        .unwrap();
+    let mut out = Vec::new();
+    while let Some(row) = rows.next().await.unwrap() {
+        out.push(optional_i64(&row, 0).unwrap().unwrap());
+    }
+    out
+}
+
+async fn one_row(conn: &Conn, sql: &str) -> turso::Row {
+    let mut rows = conn.connection().query(sql, ()).await.unwrap();
     rows.next().await.unwrap().unwrap()
+}
+
+/// Drop `with_transaction` after it has inserted `1` and parked.
+async fn cancel_after_insert(conn: &Conn) {
+    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = done.clone();
+    let work = with_transaction(conn, move |tx| {
+        let tx = tx.clone();
+        let flag = flag.clone();
+        Box::pin(async move {
+            tx.connection()
+                .execute("INSERT INTO t (n) VALUES (1)", ())
+                .await
+                .map_err(Error::from)?;
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            std::future::pending::<Result<(), AppError>>().await
+        })
+    });
+    let capped = tokio::time::timeout(std::time::Duration::from_secs(2), async move {
+        // Leaving this block drops `work`, which is the cancel.
+        {
+            let mut work = std::pin::pin!(work);
+            for _ in 0..1000 {
+                if done.load(std::sync::atomic::Ordering::SeqCst) {
+                    break;
+                }
+                let step =
+                    std::future::poll_fn(|cx| std::task::Poll::Ready(work.as_mut().poll(cx))).await;
+                assert!(
+                    matches!(step, std::task::Poll::Pending),
+                    "transaction finished"
+                );
+                tokio::task::yield_now().await;
+            }
+            assert!(
+                done.load(std::sync::atomic::Ordering::SeqCst),
+                "insert never finished"
+            );
+        }
+    });
+    capped.await.expect("cancel timed out");
 }
 
 #[test]
@@ -87,9 +151,7 @@ fn build_compiles_sql_and_params() {
 #[tokio::test]
 async fn query_and_execute_run_built_statements() {
     let conn = memory_conn().await;
-    conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)", ())
-        .await
-        .unwrap();
+    exec(&conn, "CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)").await;
     let insert = Query::insert()
         .into_table(Alias::new("t"))
         .columns([Alias::new("n")])
@@ -108,9 +170,7 @@ async fn query_and_execute_run_built_statements() {
 #[tokio::test]
 async fn a_prepared_statement_runs_more_than_once() {
     let conn = memory_conn().await;
-    conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)", ())
-        .await
-        .unwrap();
+    exec(&conn, "CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)").await;
     let insert = build(
         Query::insert()
             .into_table(Alias::new("t"))
@@ -141,12 +201,11 @@ async fn sql_errors_come_back_typed_and_not_busy() {
 #[tokio::test]
 async fn with_transaction_rolls_back_on_error() {
     let conn = memory_conn().await;
-    conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)", ())
-        .await
-        .unwrap();
+    exec(&conn, "CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)").await;
     let err = with_transaction(&conn, |tx| {
         Box::pin(async move {
-            tx.execute("INSERT INTO t (n) VALUES (1)", ())
+            tx.connection()
+                .execute("INSERT INTO t (n) VALUES (1)", ())
                 .await
                 .map_err(Error::from)?;
             Err::<(), _>(AppError("boom".into()))
@@ -167,13 +226,12 @@ async fn with_transaction_on_a_temp_file_commits_ok_and_rolls_back_err() {
     let path = path.to_str().unwrap();
     {
         let db = turso::Builder::new_local(path).build().await.unwrap();
-        let conn = db.connect().unwrap();
-        conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)", ())
-            .await
-            .unwrap();
+        let conn = Conn::new(db.connect().unwrap());
+        exec(&conn, "CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)").await;
         let kept: Result<i64, AppError> = with_transaction(&conn, |tx| {
             Box::pin(async move {
-                tx.execute("INSERT INTO t (n) VALUES (1)", ())
+                tx.connection()
+                    .execute("INSERT INTO t (n) VALUES (1)", ())
                     .await
                     .map_err(Error::from)?;
                 Ok(1)
@@ -183,10 +241,12 @@ async fn with_transaction_on_a_temp_file_commits_ok_and_rolls_back_err() {
         assert_eq!(kept, Ok(1));
         let dropped: Result<(), AppError> = with_transaction(&conn, |tx| {
             Box::pin(async move {
-                tx.execute("INSERT INTO t (n) VALUES (2)", ())
+                tx.connection()
+                    .execute("INSERT INTO t (n) VALUES (2)", ())
                     .await
                     .map_err(Error::from)?;
-                tx.execute("INSERT INTO t (n) VALUES (3)", ())
+                tx.connection()
+                    .execute("INSERT INTO t (n) VALUES (3)", ())
                     .await
                     .map_err(Error::from)?;
                 Err(AppError("boom".into()))
@@ -196,7 +256,7 @@ async fn with_transaction_on_a_temp_file_commits_ok_and_rolls_back_err() {
         assert_eq!(dropped, Err(AppError("boom".into())));
     }
     let db = turso::Builder::new_local(path).build().await.unwrap();
-    let conn = db.connect().unwrap();
+    let conn = Conn::new(db.connect().unwrap());
     assert_eq!(count(&conn).await, 1);
     let row = one_row(&conn, "SELECT n FROM t").await;
     assert_eq!(optional_i64(&row, 0).unwrap(), Some(1));
@@ -208,15 +268,16 @@ async fn with_transaction_on_a_temp_file_commits_ok_and_rolls_back_err() {
 #[tokio::test]
 async fn engine_side_rollback_leaves_the_connection_usable() {
     let conn = memory_conn().await;
-    conn.execute("CREATE TABLE t (n INTEGER UNIQUE ON CONFLICT ROLLBACK)", ())
-        .await
-        .unwrap();
-    conn.execute("INSERT INTO t (n) VALUES (1)", ())
-        .await
-        .unwrap();
+    exec(
+        &conn,
+        "CREATE TABLE t (n INTEGER UNIQUE ON CONFLICT ROLLBACK)",
+    )
+    .await;
+    exec(&conn, "INSERT INTO t (n) VALUES (1)").await;
     let err = with_transaction(&conn, |tx| {
         Box::pin(async move {
-            tx.execute("INSERT INTO t (n) VALUES (1)", ())
+            tx.connection()
+                .execute("INSERT INTO t (n) VALUES (1)", ())
                 .await
                 .map_err(Error::from)?;
             Ok::<(), AppError>(())
@@ -231,19 +292,93 @@ async fn engine_side_rollback_leaves_the_connection_usable() {
 #[tokio::test]
 async fn begin_then_in_transaction_commits() {
     let conn = memory_conn().await;
-    conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)", ())
-        .await
-        .unwrap();
+    exec(&conn, "CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)").await;
     let tx = begin(&conn).await.unwrap();
-    let out: Result<(), Error> = in_transaction(tx, |tx| {
+    let out: Result<(), Error> = in_transaction(&conn, tx, |tx| {
         Box::pin(async move {
-            tx.execute("INSERT INTO t (n) VALUES (9)", ()).await?;
+            tx.connection()
+                .execute("INSERT INTO t (n) VALUES (9)", ())
+                .await?;
             Ok(())
         })
     })
     .await;
     assert!(out.is_ok());
     assert_eq!(count(&conn).await, 1);
+}
+
+async fn table() -> Conn {
+    let conn = memory_conn().await;
+    exec(&conn, "CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)").await;
+    conn
+}
+
+async fn later_write_survives(conn: &Conn, cloned: &Conn) {
+    exec(cloned, "INSERT INTO t (n) VALUES (2)").await;
+    assert_eq!(nums(cloned).await, vec![2]);
+    assert_eq!(nums(conn).await, vec![2]);
+}
+
+#[tokio::test]
+async fn cancelled_transaction_keeps_a_later_write_on_a_clone_taken_before() {
+    let conn = table().await;
+    let cloned = conn.clone();
+    cancel_after_insert(&conn).await;
+    later_write_survives(&conn, &cloned).await;
+}
+
+#[tokio::test]
+async fn cancelled_transaction_keeps_a_later_write_on_a_clone_taken_after() {
+    let conn = table().await;
+    cancel_after_insert(&conn).await;
+    let cloned = conn.clone();
+    later_write_survives(&conn, &cloned).await;
+}
+
+#[tokio::test]
+async fn panicking_transaction_keeps_a_later_write_on_a_surviving_clone() {
+    let conn = table().await;
+    let surviving = conn.clone();
+    let join = tokio::spawn(async move {
+        let _ = with_transaction(&conn, |tx| {
+            let tx = tx.clone();
+            Box::pin(async move {
+                tx.connection()
+                    .execute("INSERT INTO t (n) VALUES (1)", ())
+                    .await
+                    .map_err(Error::from)?;
+                panic!("closure panic");
+                #[allow(unreachable_code)]
+                Ok::<(), AppError>(())
+            })
+        })
+        .await;
+    });
+    assert!(join.await.is_err());
+    later_write_survives(&surviving, &surviving).await;
+}
+
+#[tokio::test]
+async fn cancelled_task_rolls_back_and_a_survivor_write_reopens() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("kit-db-cancel.db");
+    let path = path.to_str().unwrap().to_owned();
+    {
+        let db = turso::Builder::new_local(&path).build().await.unwrap();
+        let conn = Conn::new(db.connect().unwrap());
+        exec(&conn, "CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)").await;
+        let survivor = conn.clone();
+        let task_conn = conn.clone();
+        let join = tokio::spawn(async move {
+            cancel_after_insert(&task_conn).await;
+        });
+        join.await.unwrap();
+        exec(&survivor, "INSERT INTO t (n) VALUES (2)").await;
+        assert_eq!(nums(&survivor).await, vec![2]);
+    }
+    let db = turso::Builder::new_local(&path).build().await.unwrap();
+    let conn = Conn::new(db.connect().unwrap());
+    assert_eq!(nums(&conn).await, vec![2]);
 }
 
 #[tokio::test]
