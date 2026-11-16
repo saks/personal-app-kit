@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use crate::{BackgroundSync, Schedule, WorkerResult};
+use crate::{BackgroundSync, WorkerResult};
 
 fn kit_test_job() -> BackgroundSync {
     BackgroundSync {
@@ -13,10 +13,7 @@ fn kit_test_job() -> BackgroundSync {
         run: |_: &Path| WorkerResult::Success,
         lib_name: crate::lib_name!("kit_test_lib"),
         log_tag: kit_core::log_tag!("kit-test"),
-        schedule: Schedule {
-            initial_delay: Duration::from_secs(10),
-            backoff: Duration::from_secs(30),
-        },
+        schedule: crate::schedule!(Duration::from_secs(10), Duration::from_secs(30)),
     }
 }
 

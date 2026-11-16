@@ -9,7 +9,7 @@ use jni::vm::JavaVM;
 use jni::{EnvUnowned, Outcome, jni_sig, jni_str};
 use tracing::{debug, warn};
 
-use crate::config::{BackgroundSync, Schedule};
+use crate::config::BackgroundSync;
 use crate::process;
 use crate::registry::registered;
 use crate::worker::{self, NoDataDir};
@@ -97,15 +97,10 @@ pub fn enqueue() -> Result<(), EnqueueError> {
     result
 }
 
-/// Whole seconds for `SyncWorker.enqueue`'s `Long`s.
-fn seconds(schedule: Schedule) -> [i64; 2] {
-    [schedule.initial_delay, schedule.backoff]
-        .map(|wait| i64::try_from(wait.as_secs()).unwrap_or(i64::MAX))
-}
-
 fn try_enqueue(job: &BackgroundSync) -> Result<(), EnqueueError> {
     let (vm, context_ptr) = vm_and_context()?;
-    let [initial_delay_s, backoff_s] = seconds(job.schedule);
+    // Milliseconds. `Schedule::new` already checked WorkManager's limits.
+    let [initial_delay_ms, backoff_ms] = job.schedule.millis();
     // Attaches for the thread's lifetime and pushes a local frame. A pending
     // exception becomes `CaughtJavaException`, which `enqueue` logs.
     vm.attach_current_thread(|env| -> jni::errors::Result<()> {
@@ -144,8 +139,8 @@ fn try_enqueue(job: &BackgroundSync) -> Result<(), EnqueueError> {
                 JValue::Object(&context),
                 JValue::Object(&library),
                 JValue::Object(&log_tag),
-                JValue::Long(initial_delay_s),
-                JValue::Long(backoff_s),
+                JValue::Long(initial_delay_ms),
+                JValue::Long(backoff_ms),
             ],
         )?;
         Ok(())
