@@ -6,6 +6,14 @@ This file starts with the first release. Earlier work is in the git history and 
 
 ## Unreleased
 
+- kit-db: `query` and `Prepared::query` return `Vec<turso::Row>` after the statement has been stepped. Execution errors, including busy, come back from that call (`Error::is_busy`) and are logged with the SQL. Busy is logged at `debug`.
+
+  Migration, when an app switches its reads to the kit:
+
+  1. Replace `let mut rows = query(...).await?; while let Some(row) = rows.next().await?` with `let rows = query(...).await?; for row in rows`.
+  2. Replace `rows.next().await?.is_some()` with `!rows.is_empty()`. Exists statements already use `LIMIT 1`.
+  3. Retry `query(...).await` itself. A busy read is `Error::is_busy()` from that call.
+
 - kit-db: `query`, `execute`, `Prepared::query`, `Prepared::execute`, `begin`, and `with_transaction` take `&Conn` instead of `&turso::Connection`. `in_transaction` takes `&Conn` and the transaction. `Conn` clones share one connection, so a cancelled or panicking transaction rolls back on the next statement of any clone instead of dropping that clone's write.
 
   Migration:

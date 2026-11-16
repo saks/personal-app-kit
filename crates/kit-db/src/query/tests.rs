@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use sea_query::{Alias, Enum, Expr, ExprTrait, OptionEnum, Query, Value, Values};
+use sea_query::{Alias, Enum, Expr, ExprTrait, OptionEnum, Order, Query, Value, Values};
 
 use super::*;
 
@@ -162,9 +162,27 @@ async fn query_and_execute_run_built_statements() {
         .column(Alias::new("n"))
         .from(Alias::new("t"))
         .to_owned();
-    let mut rows = query(&conn, select).await.unwrap();
-    let row = rows.next().await.unwrap().unwrap();
-    assert_eq!(optional_i64(&row, 0).unwrap(), Some(5));
+    let rows = query(&conn, select).await.unwrap();
+    let row = rows.first().unwrap();
+    assert_eq!(optional_i64(row, 0).unwrap(), Some(5));
+}
+
+#[tokio::test]
+async fn query_returns_every_row() {
+    let conn = memory_conn().await;
+    exec(&conn, "CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)").await;
+    exec(&conn, "INSERT INTO t (n) VALUES (1), (2)").await;
+    let select = Query::select()
+        .column(Alias::new("n"))
+        .from(Alias::new("t"))
+        .order_by(Alias::new("n"), Order::Asc)
+        .to_owned();
+    let rows = query(&conn, select).await.unwrap();
+    let nums: Vec<_> = rows
+        .iter()
+        .map(|row| optional_i64(row, 0).unwrap().unwrap())
+        .collect();
+    assert_eq!(nums, vec![1, 2]);
 }
 
 #[tokio::test]
@@ -196,6 +214,25 @@ async fn sql_errors_come_back_typed_and_not_busy() {
     };
     assert!(matches!(err, Error::Turso(_)), "{err:?}");
     assert!(!err.is_busy());
+}
+
+/// `abs` of `i64::MIN` prepares successfully and fails when the statement is
+/// stepped. That error has to come back from `query`.
+#[tokio::test]
+async fn execution_errors_come_back_from_query() {
+    let conn = memory_conn().await;
+    let select = Query::select()
+        .expr(Expr::cust("abs(-9223372036854775808)"))
+        .to_owned();
+    let Err(err) = query(&conn, select).await else {
+        panic!("integer overflow must fail when the statement is stepped");
+    };
+    assert!(matches!(err, Error::Turso(_)), "{err:?}");
+    assert!(!err.is_busy());
+    assert!(
+        err.to_string().to_lowercase().contains("integer overflow"),
+        "{err}"
+    );
 }
 
 #[tokio::test]
