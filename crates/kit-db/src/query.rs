@@ -15,7 +15,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use sea_query::{QueryStatementWriter, SelectStatement, SqliteQueryBuilder};
-use turso::transaction::Transaction;
+use turso::transaction::{DropBehavior, Transaction};
 use turso::{Connection, params_from_iter};
 
 use crate::error::{Error, Result};
@@ -117,22 +117,35 @@ where
 }
 
 /// Run `f` in an already-begun `tx`, then commit, or roll back on `Err`.
+///
+/// The caller still sees `f`'s error when `f` returns `Err`. An engine-side
+/// end (`ON CONFLICT ROLLBACK` and the like) leaves the connection usable.
 pub async fn in_transaction<T, E, F>(tx: Transaction<'_>, f: F) -> Result<T, E>
 where
     E: From<Error>,
     F: for<'a> FnOnce(&'a Connection) -> TxFuture<'a, T, E>,
 {
-    match f(&tx).await {
-        Ok(value) => {
-            tx.commit().await.map_err(Error::from)?;
-            Ok(value)
-        }
-        Err(err) => {
-            if let Err(rollback) = tx.rollback().await {
-                // The closure's error is the one to report; a failed
-                // rollback leaves Turso to drop the transaction.
-                tracing::warn!(error = %rollback, "db.rollback failed");
-            }
+    let mut tx = tx;
+    // Rollback stays armed while `f` runs, so a cancel still rolls back later.
+    let out = f(&tx).await;
+    let end = match &out {
+        Ok(_) => tx.execute("COMMIT", ()).await,
+        Err(_) => tx.execute("ROLLBACK", ()).await,
+    };
+    // Autocommit means the engine, `f`, or the statement above already
+    // finished the transaction. Disarm drop-rollback: a later `ROLLBACK`
+    // would fail forever and never clear Turso's dangling flag. A still-open
+    // transaction keeps `Rollback` armed.
+    if tx.is_autocommit().unwrap_or(false) {
+        tx.set_drop_behavior(DropBehavior::Ignore);
+    }
+    drop(tx);
+    match (out, end) {
+        (Ok(value), Ok(_)) => Ok(value),
+        (Ok(_), Err(err)) => Err(Error::from(err).into()),
+        (Err(err), Ok(_)) => Err(err),
+        (Err(err), Err(rollback)) => {
+            tracing::warn!(error = %rollback, "db.rollback failed");
             Err(err)
         }
     }
