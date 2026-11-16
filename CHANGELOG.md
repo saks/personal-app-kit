@@ -6,6 +6,10 @@ This file starts with the first release. Earlier work is in the git history and 
 
 ## Unreleased
 
+- tauri-plugin-kit-android: `Schedule`'s fields are private. Build one with `schedule!` (checked at compile time) or `Schedule::new`. Both delays are a whole number of milliseconds. Backoff must be from 10 s to 5 h, WorkManager's own limits. The initial delay must be at most `Schedule::MAX_INITIAL_DELAY`, which `setInitialDelay` accepts. The bridge sends milliseconds, so 10900 ms stays 10900 ms.
+
+  Migration: replace `Schedule { initial_delay, backoff }` with `schedule!(initial_delay, backoff)`.
+
 - tauri-plugin-kit-android: `enqueue` in a cold WorkManager process uses the application `Context` `SyncWorker` passed to `runSync`, so a missing tao `ndk-context` is a logged error instead of a panic. The in-app call, after the Activity has started, is unchanged.
 
 - kit-db: `query` and `Prepared::query` return `Vec<turso::Row>` after the statement has been stepped. Execution errors, including busy, come back from that call (`Error::is_busy`) and are logged with the SQL. Busy is logged at `debug`.

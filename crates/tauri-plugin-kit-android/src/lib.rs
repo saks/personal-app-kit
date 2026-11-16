@@ -42,7 +42,7 @@ mod registry;
 mod worker;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use config::{BackgroundSync, LibName, LibNameError, LibNameLiteral, Schedule};
+pub use config::{BackgroundSync, LibName, LibNameError, LibNameLiteral, Schedule, ScheduleError};
 #[cfg(any(target_os = "android", all(test, not(target_arch = "wasm32"))))]
 pub use jni_glue::enqueue;
 #[cfg(not(target_arch = "wasm32"))]
@@ -50,11 +50,13 @@ pub use result::WorkerResult;
 
 /// Registers the app's background job. Call it once, at the top level of the
 /// app's library crate, with a `fn() -> BackgroundSync`. Build the names
-/// with `lib_name!` and `kit_core::log_tag!`, which are checked at compile
-/// time, so the function has no failure path:
+/// with `lib_name!` and `kit_core::log_tag!`, and the delays with
+/// `schedule!`. All three are checked at compile time, so the function has
+/// no failure path:
 ///
 /// ```ignore
-/// use tauri_plugin_kit_android::{BackgroundSync, Schedule, lib_name};
+/// use std::time::Duration;
+/// use tauri_plugin_kit_android::{BackgroundSync, lib_name, schedule};
 ///
 /// fn background_sync() -> BackgroundSync {
 ///     BackgroundSync {
@@ -62,7 +64,7 @@ pub use result::WorkerResult;
 ///         run: run_blocking,
 ///         lib_name: lib_name!("sickness_tracker_lib"),
 ///         log_tag: kit_core::log_tag!("sickness-tracker"),
-///         schedule: Schedule { initial_delay: Duration::from_secs(10), backoff: Duration::from_secs(30) },
+///         schedule: schedule!(Duration::from_secs(10), Duration::from_secs(30)),
 ///     }
 /// }
 /// tauri_plugin_kit_android::background_sync!(background_sync);
@@ -98,6 +100,44 @@ macro_rules! lib_name {
                 ::core::result::Result::Ok(name) => $crate::LibName::from_literal(name),
                 ::core::result::Result::Err(_) => {
                     ::core::panic!(::core::concat!("invalid library name: ", $name))
+                }
+            }
+        }
+    };
+}
+
+/// A [`Schedule`] from two delays, checked at compile time: an out-of-range
+/// delay is a build error, so the value cannot fail at run time.
+///
+/// ```
+/// use std::time::Duration;
+/// let schedule = tauri_plugin_kit_android::schedule!(
+///     Duration::from_secs(10),
+///     Duration::from_secs(30),
+/// );
+/// assert_eq!(schedule.initial_delay(), Duration::from_secs(10));
+/// assert_eq!(schedule.backoff(), Duration::from_secs(30));
+/// ```
+///
+/// ```compile_fail
+/// use std::time::Duration;
+/// let _ = tauri_plugin_kit_android::schedule!(Duration::from_secs(10), Duration::ZERO);
+/// ```
+#[cfg(not(target_arch = "wasm32"))]
+#[macro_export]
+macro_rules! schedule {
+    ($initial_delay:expr, $backoff:expr $(,)?) => {
+        const {
+            match $crate::Schedule::new($initial_delay, $backoff) {
+                ::core::result::Result::Ok(schedule) => schedule,
+                ::core::result::Result::Err($crate::ScheduleError::SubMillisecond) => {
+                    ::core::panic!("schedule has a fractional millisecond")
+                }
+                ::core::result::Result::Err($crate::ScheduleError::Backoff) => {
+                    ::core::panic!("backoff must be from 10 s to 5 h")
+                }
+                ::core::result::Result::Err($crate::ScheduleError::InitialDelay) => {
+                    ::core::panic!("initial delay is too long for WorkManager")
                 }
             }
         }

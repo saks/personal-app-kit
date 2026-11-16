@@ -77,8 +77,8 @@ class SyncWorker(context: Context, params: WorkerParameters) :
       context: Context,
       library: String,
       logTag: String,
-      initialDelaySeconds: Long,
-      backoffSeconds: Long,
+      initialDelayMillis: Long,
+      backoffMillis: Long,
     ) {
       val request = OneTimeWorkRequestBuilder<SyncWorker>()
         .setInputData(workDataOf(KEY_LIBRARY to library, KEY_LOG_TAG to logTag))
@@ -87,8 +87,8 @@ class SyncWorker(context: Context, params: WorkerParameters) :
         )
         // Let the in-app Sync go first; if it finished, the job finds
         // nothing pending and makes no network call.
-        .setInitialDelay(initialDelaySeconds, TimeUnit.SECONDS)
-        .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, backoffSeconds, TimeUnit.SECONDS)
+        .setInitialDelay(initialDelayMillis, TimeUnit.MILLISECONDS)
+        .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, backoffMillis, TimeUnit.MILLISECONDS)
         .build()
       WorkManager.getInstance(context.applicationContext)
         .enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.REPLACE, request)
