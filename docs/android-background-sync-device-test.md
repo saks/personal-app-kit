@@ -14,7 +14,7 @@ For the adoption PRs (saks/sickness_tracker#100, saks/octo-budget-rs#151). These
    ```
 
    Check that `Java_com_saksmlz_kit_android_SyncWorker_runSync` is exported (`T`). Also check that `__tauri_plugin_kit_android_background_sync` is defined, not `U`. A `U` means `background_sync!` is missing, and the library will fail to load (see `src/registry.rs` in the crate).
-3. **Warm path.** With sync configured, save a record. `adb logcat -s <tag>` should show `sync: background job enqueued`. Then run `adb shell dumpsys jobscheduler | grep -A5 <applicationId>` (or use the WorkManager inspector) and confirm there is one job, with the network constraint and about a 10 s delay.
+3. **Warm path.** With sync configured, save a record. The app's call to `enqueue` returns `Ok(())`. Confirm the job with `adb shell dumpsys jobscheduler | grep -A5 <applicationId>` (or the WorkManager inspector): one job, with the network constraint and about a 10 s delay. The kit logs `sync: background job enqueued` at `debug`, so the default logcat level does not show it.
 4. **Cold path.** Save while offline, swipe the app away (`adb shell am kill <applicationId>`), then turn the network on. The worker should run without the UI. Logcat should show the app's own log lines from `run` in that cold process (the worker called `init_logs` first, so those lines are actually logged), then a successful sync. Open the app and confirm nothing is pending.
 5. **Retry.** Make the network flaky or the server unreachable. Confirm `Result.retry()` with a backoff starting near 30 s (logcat or `dumpsys`).
 6. **NeedsUser.** Use a bad token. Confirm the job ends as a failure, with no endless retries.

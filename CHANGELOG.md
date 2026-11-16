@@ -6,6 +6,10 @@ This file starts with the first release. Earlier work is in the git history and 
 
 ## Unreleased
 
+- tauri-plugin-kit-android: `enqueue` returns `Result<(), EnqueueError>`. `NoAndroidContext` means there is no application `Context` yet. `Jni` is the JNI or WorkManager failure as text, so the app does not depend on `jni`. `EnqueueError` is `#[non_exhaustive]`. A failure is still logged at `warn`. Success is `debug` (`sync: background job enqueued`).
+
+  Migration: handle the `Result` at each call (`?` or `match`). A `match` needs a catch-all arm. The device-test warm path confirms the job with `dumpsys` or the WorkManager inspector. octo-budget-rs and sickness_tracker do this when they take the next tag.
+
 - tauri-plugin-kit-android: `enqueue` in a cold WorkManager process uses the application `Context` `SyncWorker` passed to `runSync`, so a missing tao `ndk-context` is a logged error instead of a panic. The in-app call, after the Activity has started, is unchanged.
 
 - kit-db: `query` and `Prepared::query` return `Vec<turso::Row>` after the statement has been stepped. Execution errors, including busy, come back from that call (`Error::is_busy`) and are logged with the SQL. Busy is logged at `debug`.
