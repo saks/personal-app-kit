@@ -15,7 +15,7 @@ All kit crates share `[workspace.package] version` in the root `Cargo.toml` and 
 ## sea-query and turso bump checklist
 
 - Review `crates/kit-db/src/query/values.rs` for new `sea_query::Value` variants. Its last arm turns any variant it doesn't name into a run-time `Error::UnsupportedValue`, so a new variant is not a compile error: give it a named arm (or confirm the fallback is right).
-- Re-check `kit_db::Error::is_busy` against the new turso error types.
+- Re-check `kit_db::Error::retry` and `is_busy` against the new turso error types. `Busy` whose message contains `SQL statements in progress` is not a retry. `BusySnapshot` is `Retry::Transaction`.
 - Bump the kit and both apps together (turso is pinned exactly).
 
 ## Steps
