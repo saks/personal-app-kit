@@ -6,6 +6,15 @@ This file starts with the first release. Earlier work is in the git history and 
 
 ## Unreleased
 
+- kit-db: `with_transaction` and `in_transaction` pass a `Tx` into the closure. `Tx` runs statements on the open transaction and has no `connection()`. `BEGIN`, `COMMIT`, `END`, `ROLLBACK`, `SAVEPOINT`, and `RELEASE` on it return `Error::TransactionControl`. `begin` while a transaction is already open returns `Error::NestedTransaction`. A dangling rollback from a cancel is still applied before the next `BEGIN`.
+
+  Migration:
+
+  1. The closure takes `kit_db::query::Tx`, not `&Conn`.
+  2. Sea-query and `Prepared` calls pass that `Tx` (`execute(tx, stmt)`, `prepared.execute(tx)`).
+  3. Replace `tx.connection().execute` / `.query` inside the closure with `tx.execute_raw` / `tx.query_raw`. `query_raw` returns every row.
+  4. `BEGIN`, `COMMIT`, `END`, `ROLLBACK`, `SAVEPOINT`, and `RELEASE` on `Tx` return `Error::TransactionControl`.
+  5. `begin` or `with_transaction` while a transaction is already open returns `Error::NestedTransaction`.
 - kit-db: `Error::retry()` returns `Option<Retry>`. `Retry::Statement` is a lock or sync apply/checkpoint (`turso::Error::Busy`, or text `database is busy`): retry that call. `Retry::Transaction` is `BusySnapshot`: roll back and retry the whole transaction. A `Busy` message containing `SQL statements in progress` is `None` (finish or reset the other statement; waiting does not help). `is_busy()` is `retry().is_some()`, so it stays true for both levels. The text fallback no longer matches `sync operation is in progress`.
 
   Inside `with_transaction` / `in_transaction`, match `retry()`. Retrying one statement when the level is `Transaction` fails again.
@@ -35,7 +44,7 @@ This file starts with the first release. Earlier work is in the git history and 
 
   1. Wrap `database.connect()` in `kit_db::query::Conn::new`.
   2. Pass `&Conn` to `query`, `execute`, `Prepared::query`, `Prepared::execute`, `begin`, `with_transaction`, and `in_transaction`.
-  3. The closure receives `&Conn`. Use `query` / `execute` for sea-query, or `tx.connection()` for raw SQL.
+  3. The closure receives `Tx`. Pass it to `query` / `execute`, or use `Tx::execute_raw` / `Tx::query_raw` for raw SQL.
   4. Share the handle with `Conn::clone`. Do not call `Connection::clone` on `connection()`.
   5. After a cancel or panic, the next statement on any clone rolls the open transaction back and then runs. Do not treat the connection as failed, and do not `COMMIT` to finish a cancelled transaction.
 

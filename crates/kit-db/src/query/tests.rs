@@ -56,13 +56,9 @@ async fn cancel_after_insert(conn: &Conn) {
     let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let flag = done.clone();
     let work = with_transaction(conn, move |tx| {
-        let tx = tx.clone();
         let flag = flag.clone();
         Box::pin(async move {
-            tx.connection()
-                .execute("INSERT INTO t (n) VALUES (1)", ())
-                .await
-                .map_err(Error::from)?;
+            tx.execute_raw("INSERT INTO t (n) VALUES (1)", ()).await?;
             flag.store(true, std::sync::atomic::Ordering::SeqCst);
             std::future::pending::<Result<(), AppError>>().await
         })
@@ -241,10 +237,7 @@ async fn with_transaction_rolls_back_on_error() {
     exec(&conn, "CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)").await;
     let err = with_transaction(&conn, |tx| {
         Box::pin(async move {
-            tx.connection()
-                .execute("INSERT INTO t (n) VALUES (1)", ())
-                .await
-                .map_err(Error::from)?;
+            tx.execute_raw("INSERT INTO t (n) VALUES (1)", ()).await?;
             Err::<(), _>(AppError("boom".into()))
         })
     })
@@ -267,10 +260,7 @@ async fn with_transaction_on_a_temp_file_commits_ok_and_rolls_back_err() {
         exec(&conn, "CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)").await;
         let kept: Result<i64, AppError> = with_transaction(&conn, |tx| {
             Box::pin(async move {
-                tx.connection()
-                    .execute("INSERT INTO t (n) VALUES (1)", ())
-                    .await
-                    .map_err(Error::from)?;
+                tx.execute_raw("INSERT INTO t (n) VALUES (1)", ()).await?;
                 Ok(1)
             })
         })
@@ -278,14 +268,8 @@ async fn with_transaction_on_a_temp_file_commits_ok_and_rolls_back_err() {
         assert_eq!(kept, Ok(1));
         let dropped: Result<(), AppError> = with_transaction(&conn, |tx| {
             Box::pin(async move {
-                tx.connection()
-                    .execute("INSERT INTO t (n) VALUES (2)", ())
-                    .await
-                    .map_err(Error::from)?;
-                tx.connection()
-                    .execute("INSERT INTO t (n) VALUES (3)", ())
-                    .await
-                    .map_err(Error::from)?;
+                tx.execute_raw("INSERT INTO t (n) VALUES (2)", ()).await?;
+                tx.execute_raw("INSERT INTO t (n) VALUES (3)", ()).await?;
                 Err(AppError("boom".into()))
             })
         })
@@ -313,10 +297,7 @@ async fn engine_side_rollback_leaves_the_connection_usable() {
     exec(&conn, "INSERT INTO t (n) VALUES (1)").await;
     let err = with_transaction(&conn, |tx| {
         Box::pin(async move {
-            tx.connection()
-                .execute("INSERT INTO t (n) VALUES (1)", ())
-                .await
-                .map_err(Error::from)?;
+            tx.execute_raw("INSERT INTO t (n) VALUES (1)", ()).await?;
             Ok::<(), AppError>(())
         })
     })
@@ -333,15 +314,114 @@ async fn begin_then_in_transaction_commits() {
     let tx = begin(&conn).await.unwrap();
     let out: Result<(), Error> = in_transaction(&conn, tx, |tx| {
         Box::pin(async move {
-            tx.connection()
-                .execute("INSERT INTO t (n) VALUES (9)", ())
-                .await?;
+            tx.execute_raw("INSERT INTO t (n) VALUES (9)", ()).await?;
             Ok(())
         })
     })
     .await;
     assert!(out.is_ok());
     assert_eq!(count(&conn).await, 1);
+}
+
+#[test]
+fn transaction_control_keywords_are_rejected() {
+    for sql in [
+        "COMMIT",
+        "  begin deferred",
+        "-- x\nROLLBACK",
+        "/* c */ release s",
+        "SAVEPOINT s",
+        "END",
+    ] {
+        assert!(
+            matches!(
+                reject_transaction_control(sql),
+                Err(Error::TransactionControl)
+            ),
+            "{sql}"
+        );
+    }
+    assert!(reject_transaction_control("INSERT INTO t VALUES (1)").is_ok());
+    assert!(reject_transaction_control("select 1").is_ok());
+}
+
+#[tokio::test]
+async fn a_second_begin_is_a_nested_transaction() {
+    let conn = memory_conn().await;
+    exec(&conn, "CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)").await;
+    let tx = begin(&conn).await.unwrap();
+    let err = begin(&conn).await.unwrap_err();
+    assert!(matches!(err, Error::NestedTransaction), "{err:?}");
+    drop(tx);
+    exec(&conn, "INSERT INTO t (n) VALUES (1)").await;
+    assert_eq!(count(&conn).await, 1);
+}
+
+#[tokio::test]
+async fn with_transaction_after_cancel_commits() {
+    let conn = table().await;
+    cancel_after_insert(&conn).await;
+    let kept: Result<(), AppError> = with_transaction(&conn, |tx| {
+        Box::pin(async move {
+            tx.execute_raw("INSERT INTO t (n) VALUES (2)", ()).await?;
+            Ok(())
+        })
+    })
+    .await;
+    assert_eq!(kept, Ok(()));
+    assert_eq!(nums(&conn).await, vec![2]);
+}
+
+#[tokio::test]
+async fn transaction_control_sql_is_rejected_and_a_later_insert_commits() {
+    let conn = table().await;
+    let out: Result<(), Error> = with_transaction(&conn, |tx| {
+        Box::pin(async move {
+            let commit = tx.execute_raw("COMMIT", ()).await.unwrap_err();
+            assert!(matches!(commit, Error::TransactionControl), "{commit:?}");
+            let begin = tx.execute_raw("  begin deferred", ()).await.unwrap_err();
+            assert!(matches!(begin, Error::TransactionControl), "{begin:?}");
+            tx.execute_raw("INSERT INTO t (n) VALUES (4)", ()).await?;
+            Ok(())
+        })
+    })
+    .await;
+    assert!(out.is_ok(), "{out:?}");
+    assert_eq!(nums(&conn).await, vec![4]);
+}
+
+#[tokio::test]
+async fn statements_on_tx_commit() {
+    let conn = table().await;
+    let insert = Query::insert()
+        .into_table(Alias::new("t"))
+        .columns([Alias::new("n")])
+        .values_panic([6.into()])
+        .to_owned();
+    let prepared = build(insert.clone()).unwrap();
+    let out: Result<(), Error> = with_transaction(&conn, |tx| {
+        Box::pin(async move {
+            execute(tx, insert).await?;
+            prepared.execute(tx).await?;
+            let rows = tx.query_raw("SELECT n FROM t", ()).await?;
+            let nums: Vec<_> = rows
+                .iter()
+                .map(|row| optional_i64(row, 0).unwrap().unwrap())
+                .collect();
+            assert_eq!(nums, vec![6, 6]);
+            Ok(())
+        })
+    })
+    .await;
+    assert!(out.is_ok(), "{out:?}");
+    assert_eq!(nums(&conn).await, vec![6, 6]);
+}
+
+#[tokio::test]
+async fn commit_on_a_conn_is_not_transaction_control() {
+    let conn = memory_conn().await;
+    let err = Error::from(conn.connection().execute("COMMIT", ()).await.unwrap_err());
+    assert!(matches!(err, Error::Turso(_)), "{err:?}");
 }
 
 async fn table() -> Conn {
@@ -378,12 +458,8 @@ async fn panicking_transaction_keeps_a_later_write_on_a_surviving_clone() {
     let surviving = conn.clone();
     let join = tokio::spawn(async move {
         let _ = with_transaction(&conn, |tx| {
-            let tx = tx.clone();
             Box::pin(async move {
-                tx.connection()
-                    .execute("INSERT INTO t (n) VALUES (1)", ())
-                    .await
-                    .map_err(Error::from)?;
+                tx.execute_raw("INSERT INTO t (n) VALUES (1)", ()).await?;
                 panic!("closure panic");
                 #[allow(unreachable_code)]
                 Ok::<(), AppError>(())
