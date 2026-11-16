@@ -9,7 +9,31 @@ fn jni_entry_points_are_part_of_the_host_build() {
 
 #[test]
 fn enqueue_without_a_java_vm_does_not_panic() {
-    enqueue();
+    assert_eq!(enqueue(), Err(EnqueueError::NoAndroidContext));
+}
+
+#[test]
+fn no_android_context_displays_its_text() {
+    assert_eq!(
+        EnqueueError::NoAndroidContext.to_string(),
+        "android context is not initialized"
+    );
+}
+
+#[test]
+fn a_jni_failure_displays_the_stored_text() {
+    assert_eq!(
+        EnqueueError::Jni("loadClass failed".to_string()).to_string(),
+        "loadClass failed"
+    );
+}
+
+#[test]
+fn a_null_java_vm_is_the_jni_error_text() {
+    let jni_err = jni::errors::Error::NullPtr("JavaVM");
+    let err = jni_error(jni::errors::Error::NullPtr("JavaVM"));
+    assert_eq!(err, EnqueueError::Jni(jni_err.to_string()));
+    assert_eq!(err.to_string(), jni_err.to_string());
 }
 
 #[test]
