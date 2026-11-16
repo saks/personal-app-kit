@@ -13,7 +13,8 @@
 //!   `REPLACE`, so at most one is queued. A cold worker may call it: the
 //!   context comes from `SyncWorker`, not from a Tauri Activity. An in-app
 //!   call still needs the Activity to have started. A missing context is
-//!   logged, not a panic.
+//!   `Err(EnqueueError::NoAndroidContext)`. A JNI or WorkManager failure is
+//!   `Err(EnqueueError::Jni(_))`. Both are logged. Neither panics.
 //! - In a cold process the worker needs no Tauri runtime: it loads the app's
 //!   library, calls `BackgroundSync::init_logs` (if set), then
 //!   `BackgroundSync::run` with the data dir. A panic, in the app's
@@ -44,7 +45,7 @@ mod worker;
 #[cfg(not(target_arch = "wasm32"))]
 pub use config::{BackgroundSync, LibName, LibNameError, LibNameLiteral, Schedule};
 #[cfg(any(target_os = "android", all(test, not(target_arch = "wasm32"))))]
-pub use jni_glue::enqueue;
+pub use jni_glue::{EnqueueError, enqueue};
 #[cfg(not(target_arch = "wasm32"))]
 pub use result::WorkerResult;
 

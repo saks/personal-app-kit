@@ -7,7 +7,7 @@ use jni::objects::{JClass, JObject, JString, JValue};
 use jni::sys::jint;
 use jni::vm::JavaVM;
 use jni::{EnvUnowned, Outcome, jni_sig, jni_str};
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 use crate::config::{BackgroundSync, Schedule};
 use crate::process;
@@ -17,31 +17,37 @@ use crate::worker::{self, NoDataDir};
 /// `SyncWorker`'s class, which fixes the `runSync` symbol below.
 const WORKER_CLASS: &str = "com.saksmlz.kit.android.SyncWorker";
 
-/// Why `enqueue` could not hand the job to WorkManager.
-#[derive(Debug)]
-enum EnqueueError {
+/// Why `enqueue` could not hand the job to WorkManager. Each app maps this
+/// into its own IPC error.
+///
+/// `#[non_exhaustive]`: a new variant is not a breaking change, so an app's
+/// `match` needs a catch-all arm (map it to a generic error).
+#[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum EnqueueError {
     /// No application `Context`: `runSync` has not stashed one, and (on the
     /// host, or before the Activity) tao's `ndk-context` is not available.
     NoAndroidContext,
-    /// A JNI call failed.
-    Jni(jni::errors::Error),
+    /// A JNI or WorkManager call failed. The string is `jni::errors::Error`'s
+    /// `Display`, so this crate's public types do not name `jni`.
+    Jni(String),
 }
 
 impl fmt::Display for EnqueueError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NoAndroidContext => f.write_str("android context is not initialized"),
-            Self::Jni(err) => write!(f, "{err}"),
+            Self::Jni(err) => f.write_str(err),
         }
     }
 }
 
 impl std::error::Error for EnqueueError {}
 
-impl From<jni::errors::Error> for EnqueueError {
-    fn from(err: jni::errors::Error) -> Self {
-        Self::Jni(err)
-    }
+/// Store a JNI failure as text. Not `From`: a public impl would export the
+/// private `jni` dependency.
+fn jni_error(err: jni::errors::Error) -> EnqueueError {
+    EnqueueError::Jni(err.to_string())
 }
 
 /// `SyncWorker.runSync(dataDir, context)`, on WorkManager's background thread
@@ -79,12 +85,16 @@ pub extern "system" fn Java_com_saksmlz_kit_android_SyncWorker_runSync<'local>(
 /// the worker's `run` (a follow-up). The worker process has no Tauri
 /// Activity: `runSync` keeps the application `Context` `SyncWorker` passed
 /// in. The in-app call still needs the Activity to have started (tao's
-/// `ndk-context`). A missing context is logged, not a panic.
-pub fn enqueue() {
-    match try_enqueue(&registered()) {
-        Ok(()) => info!("sync: background job enqueued"),
+/// `ndk-context`). A missing context is `Err(EnqueueError::NoAndroidContext)`.
+/// A JNI or WorkManager failure is `Err(EnqueueError::Jni(_))`. Both are
+/// logged. Neither panics.
+pub fn enqueue() -> Result<(), EnqueueError> {
+    let result = try_enqueue(&registered());
+    match &result {
+        Ok(()) => debug!("sync: background job enqueued"),
         Err(err) => warn!(error = %err, "sync: could not enqueue the background job"),
     }
+    result
 }
 
 /// Whole seconds for `SyncWorker.enqueue`'s `Long`s.
@@ -140,7 +150,7 @@ fn try_enqueue(job: &BackgroundSync) -> Result<(), EnqueueError> {
         )?;
         Ok(())
     })
-    .map_err(EnqueueError::from)
+    .map_err(jni_error)
 }
 
 /// The stashed application `Context` and this crate's `JavaVM`, or tao's
@@ -169,13 +179,13 @@ fn vm_and_context_from_activity() -> Result<(JavaVM, jni::sys::jobject), Enqueue
     let ctx = ndk_context::android_context();
     let vm_ptr: *mut jni::sys::JavaVM = ctx.vm().cast();
     if vm_ptr.is_null() {
-        return Err(jni::errors::Error::NullPtr("JavaVM").into());
+        return Err(jni_error(jni::errors::Error::NullPtr("JavaVM")));
     }
     // SAFETY: non-null process JavaVM, valid for the process lifetime.
     let vm = unsafe { JavaVM::from_raw(vm_ptr) };
     let context_ptr: jni::sys::jobject = ctx.context().cast();
     if context_ptr.is_null() {
-        return Err(jni::errors::Error::NullPtr("Context").into());
+        return Err(jni_error(jni::errors::Error::NullPtr("Context")));
     }
     Ok((vm, context_ptr))
 }
