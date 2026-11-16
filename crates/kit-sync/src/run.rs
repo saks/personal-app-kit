@@ -4,7 +4,7 @@ use kit_sync_types::{FailureClass, SyncTrigger};
 use tracing::{info, warn};
 
 use crate::AutoSync;
-use crate::backoff::arm_retry;
+use crate::backoff::{Event, apply};
 use crate::flight::Flight;
 use crate::host::{Host, Outcome, SyncEvent};
 
@@ -34,7 +34,7 @@ pub async fn run<H: Host>(host: &H, trigger: SyncTrigger) -> Result<H::Report, H
                 && let Some(seen) = seen
                 && auto.shared.clear_needs_user(seen)
             {
-                auto.backoff.reset();
+                apply(host, Event::Succeeded);
             }
             info!(?trigger, "sync: finished");
             host.emit(&SyncEvent::Finished {
@@ -51,7 +51,7 @@ pub async fn run<H: Host>(host: &H, trigger: SyncTrigger) -> Result<H::Report, H
                 && let Some(seen) = seen
                 && auto.shared.needs_user(seen)
             {
-                auto.backoff.reset();
+                apply(host, Event::NeedsUser);
             }
             warn!(?trigger, ?class, %error, "sync: failed");
             host.emit(&SyncEvent::Finished {
@@ -139,7 +139,7 @@ async fn drive<H: Host>(host: H, mut flight: Flight, mut trigger: SyncTrigger) {
                 .zip(seen)
                 .is_some_and(|(auto, seen)| auto.shared.epoch() == seen)
         {
-            arm_retry(&host);
+            apply(&host, Event::Failed);
         }
         match flight.next_queued() {
             Some(next) => trigger = next,

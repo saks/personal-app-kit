@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use super::*;
 
 #[test]
@@ -29,4 +31,45 @@ fn samples_stay_within_the_spread() {
 fn samples_vary() {
     let first = Spread::DEFAULT.sample();
     assert!((0..100).any(|_| Spread::DEFAULT.sample() != first));
+}
+
+#[test]
+fn failed_starts_at_one_and_then_increments() {
+    assert_eq!(step(None, Event::Failed), Action::Arm(NonZeroU32::MIN));
+    let three = NonZeroU32::new(3).unwrap();
+    let four = NonZeroU32::new(4).unwrap();
+    assert_eq!(step(Some(three), Event::Failed), Action::Arm(four));
+    assert_eq!(
+        step(Some(NonZeroU32::MAX), Event::Failed),
+        Action::Arm(NonZeroU32::MAX),
+        "the count saturates at u32::MAX"
+    );
+}
+
+#[test]
+fn debounced_resume_rearms_step_one_when_a_count_is_stored() {
+    // A fired timer is the same `Some`: the decision does not look at
+    // `AbortHandle::is_finished`.
+    let four = NonZeroU32::new(4).unwrap();
+    assert_eq!(
+        step(Some(four), Event::Resumed { debounced: true }),
+        Action::Arm(NonZeroU32::MIN)
+    );
+    assert_eq!(step(None, Event::Resumed { debounced: true }), Action::Keep);
+}
+
+#[test]
+fn other_events_clear() {
+    let stored = Some(NonZeroU32::MIN);
+    for event in [
+        Event::Write,
+        Event::Online,
+        Event::SettingsSaved,
+        Event::Succeeded,
+        Event::NeedsUser,
+        Event::Resumed { debounced: false },
+    ] {
+        assert_eq!(step(stored, event), Action::Clear, "{event:?}");
+        assert_eq!(step(None, event), Action::Clear, "{event:?}");
+    }
 }

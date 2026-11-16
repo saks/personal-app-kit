@@ -7,7 +7,7 @@ use kit_sync_types::SyncTrigger;
 use tokio::time::Instant;
 use tracing::info;
 
-use crate::backoff::arm_retry;
+use crate::backoff::{Event, apply};
 use crate::host::Host;
 use crate::lock;
 use crate::run::{active, request};
@@ -51,17 +51,15 @@ impl Debounce {
 /// The app came back to the foreground (Android `Resumed`, first load):
 /// `Auto`, debounced. A suspend while automatic runs were active ends that
 /// window, so the first resume after it runs. Bursts that never suspend stay
-/// collapsed for [`crate::SyncPolicy::auto_debounce`]. Restarts the backoff;
-/// when `Auto` is debounced, a stored retry (even one that already fired)
-/// comes back at the first step.
+/// collapsed for [`crate::SyncPolicy::auto_debounce`]. A debounced resume
+/// re-arms step 1 when a count is stored, including a retry that already
+/// fired.
 pub fn on_resumed<H: Host>(host: &H) {
     let Some(auto) = active(host) else { return };
-    let retrying = auto.backoff.retrying();
-    auto.backoff.reset();
-    if auto.debounce.due(auto.policy.auto_debounce) {
+    let debounced = !auto.debounce.due(auto.policy.auto_debounce);
+    apply(host, Event::Resumed { debounced });
+    if !debounced {
         request(host, SyncTrigger::Auto);
-    } else if retrying {
-        arm_retry(host);
     }
 }
 
@@ -70,7 +68,7 @@ pub fn on_resumed<H: Host>(host: &H) {
 pub fn on_online<H: Host>(host: &H) {
     info!("sync: webview online");
     let Some(auto) = active(host) else { return };
-    auto.backoff.reset();
+    apply(host, Event::Online);
     let host = host.clone();
     auto.rt.spawn(async move {
         // A failed count syncs anyway.

@@ -6,6 +6,7 @@ use kit_sync_types::SyncTrigger;
 use tokio::task::AbortHandle;
 use tracing::warn;
 
+use crate::backoff::{Event, apply};
 use crate::budget::{BudgetExceeded, with_budget};
 use crate::host::Host;
 use crate::lock;
@@ -40,7 +41,7 @@ impl WriteTimer {
 /// No-op when automatic runs are off.
 pub fn schedule_after_write<H: Host>(host: &H) {
     let Some(auto) = active(host) else { return };
-    auto.backoff.reset();
+    apply(host, Event::Write);
     let timer_host = host.clone();
     let delay = auto.policy.write_delay;
     let timer = auto.rt.spawn(async move {
