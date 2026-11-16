@@ -15,6 +15,9 @@ This file starts with the first release. Earlier work is in the git history and 
   3. Replace `tx.connection().execute` / `.query` inside the closure with `tx.execute_raw` / `tx.query_raw`. `query_raw` returns every row.
   4. `BEGIN`, `COMMIT`, `END`, `ROLLBACK`, `SAVEPOINT`, and `RELEASE` on `Tx` return `Error::TransactionControl`.
   5. `begin` or `with_transaction` while a transaction is already open returns `Error::NestedTransaction`.
+- kit-db: `Error::retry()` returns `Option<Retry>`. `Retry::Statement` is a lock or sync apply/checkpoint (`turso::Error::Busy`, or text `database is busy`): retry that call. `Retry::Transaction` is `BusySnapshot`: roll back and retry the whole transaction. A `Busy` message containing `SQL statements in progress` is `None` (finish or reset the other statement; waiting does not help). `is_busy()` is `retry().is_some()`, so it stays true for both levels. The text fallback no longer matches `sync operation is in progress`.
+
+  Inside `with_transaction` / `in_transaction`, match `retry()`. Retrying one statement when the level is `Transaction` fails again.
 
 - tauri-plugin-kit-android: a background sync stops when the failure cannot clear itself. An unreadable data dir fails the job. A caught panic is retried once, then the job fails. A process that dies in the native call (release builds abort on panic) stops after five deaths, before the library is loaded again. An unknown result code is logged and fails the job. Offline and busy results still retry with WorkManager's backoff. The next save or pause still replaces the job and starts a fresh budget.
 
@@ -33,7 +36,7 @@ This file starts with the first release. Earlier work is in the git history and 
 
   1. Replace `let mut rows = query(...).await?; while let Some(row) = rows.next().await?` with `let rows = query(...).await?; for row in rows`.
   2. Replace `rows.next().await?.is_some()` with `!rows.is_empty()`. Exists statements already use `LIMIT 1`.
-  3. Retry `query(...).await` itself. A busy read is `Error::is_busy()` from that call.
+  3. Match `Error::retry()`. `Retry::Statement` retries `query(...).await`. `Retry::Transaction` rolls back and retries the whole transaction. `is_busy()` is true for both.
 
 - kit-db: `query`, `execute`, `Prepared::query`, `Prepared::execute`, `begin`, and `with_transaction` take `&Conn` instead of `&turso::Connection`. `in_transaction` takes `&Conn` and the transaction. `Conn` clones share one connection, so a cancelled or panicking transaction rolls back on the next statement of any clone instead of dropping that clone's write.
 

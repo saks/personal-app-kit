@@ -1,17 +1,42 @@
-use super::Error;
+use super::{Error, Retry};
 
 #[test]
-fn typed_and_text_busy_errors_are_busy() {
-    assert!(Error::from(turso::Error::Busy("x".into())).is_busy());
-    assert!(Error::from(turso::Error::BusySnapshot("x".into())).is_busy());
-    assert!(Error::from(turso::Error::Error("Database is busy".into())).is_busy());
-    assert!(
-        Error::from(turso::Error::Error(
-            "a sync operation is in progress".into()
-        ))
-        .is_busy()
-    );
-    assert!(!Error::from(turso::Error::Error("no such table: t".into())).is_busy());
+fn retry_level_follows_the_turso_variant() {
+    let locked = Error::from(turso::Error::Busy("database is locked".into()));
+    assert_eq!(locked.retry(), Some(Retry::Statement));
+    assert!(locked.is_busy());
+
+    let in_progress = Error::from(turso::Error::Busy(
+        "cannot commit transaction - SQL statements in progress".into(),
+    ));
+    assert_eq!(in_progress.retry(), None);
+    assert!(!in_progress.is_busy());
+
+    let snapshot = Error::from(turso::Error::BusySnapshot(
+        "database snapshot is stale, rollback and retry the transaction".into(),
+    ));
+    assert_eq!(snapshot.retry(), Some(Retry::Transaction));
+    assert!(snapshot.is_busy());
+
+    let text = Error::from(turso::Error::Error("Database is busy".into()));
+    assert_eq!(text.retry(), Some(Retry::Statement));
+    assert!(text.is_busy());
+
+    let tape = Error::from(turso::Error::Error("database is busy".into()));
+    assert_eq!(tape.retry(), Some(Retry::Statement));
+    assert!(tape.is_busy());
+
+    let sync_phrase = Error::from(turso::Error::Error(
+        "a sync operation is in progress".into(),
+    ));
+    assert_eq!(sync_phrase.retry(), None);
+    assert!(!sync_phrase.is_busy());
+
+    let missing = Error::from(turso::Error::Error("no such table: t".into()));
+    assert_eq!(missing.retry(), None);
+    assert!(!missing.is_busy());
+
+    assert_eq!(Error::NotANumber.retry(), None);
     assert!(!Error::NotANumber.is_busy());
     assert!(!Error::NestedTransaction.is_busy());
     assert!(!Error::TransactionControl.is_busy());

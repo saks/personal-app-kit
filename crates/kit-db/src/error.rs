@@ -50,24 +50,61 @@ pub enum Error {
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+/// Which call to run again. How long to wait, and how many times, stay the
+/// app's policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Retry {
+    /// Run the same statement again. An open transaction is still open.
+    Statement,
+    /// Roll the transaction back and run the whole transaction again.
+    /// Retrying one statement on a stale snapshot fails the same way.
+    Transaction,
+}
+
 impl Error {
-    /// Turso is busy (sync apply / checkpoint in flight), so the call may
-    /// succeed if retried. Retrying is the app's policy, not the kit's.
-    pub fn is_busy(&self) -> bool {
+    /// `Some` when retrying at that level can succeed.
+    ///
+    /// `Busy` (a lock, or sync apply / checkpoint) is [`Retry::Statement`].
+    /// `BusySnapshot` is [`Retry::Transaction`]: turso 0.8.3 leaves the
+    /// snapshot stale until the transaction rolls back. A `Busy` message
+    /// containing `SQL statements in progress` is `None`. That is
+    /// same-connection misuse, and waiting does not finish the other
+    /// statement.
+    ///
+    /// Inside `with_transaction` / `in_transaction`, match this.
+    /// [`Self::is_busy`] is true for both levels, so retrying one statement
+    /// on [`Retry::Transaction`] fails again.
+    pub fn retry(&self) -> Option<Retry> {
         match self {
-            Error::Turso(turso::Error::Busy(_) | turso::Error::BusySnapshot(_)) => true,
-            Error::Turso(other) => is_busy_message(&other.to_string()),
-            _ => false,
+            Error::Turso(turso::Error::Busy(msg)) if statements_in_progress(msg) => None,
+            Error::Turso(turso::Error::Busy(_)) => Some(Retry::Statement),
+            Error::Turso(turso::Error::BusySnapshot(_)) => Some(Retry::Transaction),
+            Error::Turso(other) if is_busy_message(&other.to_string()) => Some(Retry::Statement),
+            _ => None,
         }
+    }
+
+    /// [`retry`](Self::retry) is `Some`. Both [`Retry::Statement`] and
+    /// [`Retry::Transaction`] count.
+    pub fn is_busy(&self) -> bool {
+        self.retry().is_some()
     }
 }
 
-/// turso 0.8.3's SyncBusy gate and some paths only say "Database is busy" in
-/// text (`sync.rs` `is_sync_busy_error` matches the same string). Drop this
-/// once every busy path returns the typed `turso::Error::Busy`.
+/// turso 0.8.3 maps `LimboError::StatementsInProgress` onto `Error::Busy`
+/// with the suffix `{op} - SQL statements in progress`.
+fn statements_in_progress(msg: &str) -> bool {
+    msg.to_lowercase().contains("sql statements in progress")
+}
+
+/// Text busy from paths that do not return typed `turso::Error::Busy`.
+///
+/// turso 0.8.3 `sync.rs` `is_sync_busy_error` matches `Error::Error` whose
+/// message contains `Database is busy`. `turso_sync_engine` `database_tape.rs`
+/// returns `database is busy` for `StepResult::Busy`. The SyncBusy gate
+/// returns typed `Busy("database is locked")` and does not use this.
 pub(crate) fn is_busy_message(msg: &str) -> bool {
-    let lower = msg.to_lowercase();
-    lower.contains("database is busy") || lower.contains("sync operation is in progress")
+    msg.to_lowercase().contains("database is busy")
 }
 
 #[cfg(test)]

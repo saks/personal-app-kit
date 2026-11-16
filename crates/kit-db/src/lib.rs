@@ -20,5 +20,5 @@ pub mod paths;
 pub mod query;
 pub mod time;
 
-pub use error::{Error, Result};
+pub use error::{Error, Result, Retry};
 pub use time::UtcMillis;
