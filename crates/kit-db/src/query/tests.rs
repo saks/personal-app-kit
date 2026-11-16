@@ -307,6 +307,46 @@ async fn engine_side_rollback_leaves_the_connection_usable() {
     assert_eq!(count(&conn).await, 1);
 }
 
+/// A deferred foreign key makes `COMMIT` fail while the transaction is still
+/// open. The caller sees that error, the row is not kept, and the connection
+/// still answers the next query.
+#[tokio::test]
+async fn failed_commit_leaves_the_connection_usable() {
+    let conn = memory_conn().await;
+    exec(&conn, "PRAGMA foreign_keys = ON").await;
+    exec(&conn, "CREATE TABLE parent (id INTEGER PRIMARY KEY)").await;
+    exec(
+        &conn,
+        "CREATE TABLE child (
+            id INTEGER PRIMARY KEY,
+            pid INTEGER REFERENCES parent(id) DEFERRABLE INITIALLY DEFERRED
+        )",
+    )
+    .await;
+    let inserted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = inserted.clone();
+    let err = with_transaction(&conn, move |tx| {
+        Box::pin(async move {
+            tx.execute_raw("INSERT INTO child (id, pid) VALUES (1, 99)", ())
+                .await?;
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok::<(), AppError>(())
+        })
+    })
+    .await
+    .unwrap_err();
+    assert_eq!(err, AppError("FOREIGN KEY constraint failed".into()));
+    assert!(
+        inserted.load(std::sync::atomic::Ordering::SeqCst),
+        "insert never finished"
+    );
+    let child = one_row(&conn, "SELECT COUNT(*) FROM child").await;
+    assert_eq!(optional_i64(&child, 0).unwrap(), Some(0));
+    exec(&conn, "INSERT INTO parent (id) VALUES (1)").await;
+    let parent = one_row(&conn, "SELECT COUNT(*) FROM parent").await;
+    assert_eq!(optional_i64(&parent, 0).unwrap(), Some(1));
+}
+
 #[tokio::test]
 async fn begin_then_in_transaction_commits() {
     let conn = memory_conn().await;
