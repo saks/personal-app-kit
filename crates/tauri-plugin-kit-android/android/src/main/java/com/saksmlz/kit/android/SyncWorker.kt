@@ -37,7 +37,7 @@ class SyncWorker(context: Context, params: WorkerParameters) :
     val code = withContext(Dispatchers.IO) {
       try {
         System.loadLibrary(library)
-        runSync(applicationContext.dataDir.absolutePath)
+        runSync(applicationContext.dataDir.absolutePath, applicationContext)
       } catch (e: UnsatisfiedLinkError) {
         // Permanent: a missing library or symbol (a forgotten
         // `background_sync!` shows up here as a dlopen error) stays missing
@@ -67,9 +67,9 @@ class SyncWorker(context: Context, params: WorkerParameters) :
     private const val RETRY = 1
     private const val FAILURE = 2
 
-    /** `dataDir` is Tauri's `app_data_dir`. */
+    /** `dataDir` is Tauri's `app_data_dir`. `context` is the application. */
     @JvmStatic
-    private external fun runSync(dataDir: String): Int
+    private external fun runSync(dataDir: String, context: Context): Int
 
     /** Called from Rust. One queued job at most: a new one replaces it. */
     @JvmStatic

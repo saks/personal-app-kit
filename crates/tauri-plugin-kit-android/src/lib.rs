@@ -10,7 +10,10 @@
 //!   a function the worker calls; it is not a runtime `init`, because in a
 //!   cold process WorkManager starts the worker before any app code runs.
 //! - `enqueue` (Android, and host tests): one network-constrained job,
-//!   `REPLACE`, so at most one is queued.
+//!   `REPLACE`, so at most one is queued. A cold worker may call it: the
+//!   context comes from `SyncWorker`, not from a Tauri Activity. An in-app
+//!   call still needs the Activity to have started. A missing context is
+//!   logged, not a panic.
 //! - In a cold process the worker needs no Tauri runtime: it loads the app's
 //!   library, calls `BackgroundSync::init_logs` (if set), then
 //!   `BackgroundSync::run` with the data dir. A panic, in the app's
@@ -31,6 +34,8 @@ mod result;
 // The worker side: Android, plus host tests so `make check` builds the glue.
 #[cfg(any(target_os = "android", all(test, not(target_arch = "wasm32"))))]
 mod jni_glue;
+#[cfg(any(target_os = "android", all(test, not(target_arch = "wasm32"))))]
+mod process;
 #[cfg(any(target_os = "android", all(test, not(target_arch = "wasm32"))))]
 mod registry;
 #[cfg(any(target_os = "android", all(test, not(target_arch = "wasm32"))))]

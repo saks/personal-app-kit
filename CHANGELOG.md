@@ -6,6 +6,8 @@ This file starts with the first release. Earlier work is in the git history and 
 
 ## Unreleased
 
+- tauri-plugin-kit-android: `enqueue` in a cold WorkManager process uses the application `Context` `SyncWorker` passed to `runSync`, so a missing tao `ndk-context` is a logged error instead of a panic. The in-app call, after the Activity has started, is unchanged.
+
 - kit-db: `query` and `Prepared::query` return `Vec<turso::Row>` after the statement has been stepped. Execution errors, including busy, come back from that call (`Error::is_busy`) and are logged with the SQL. Busy is logged at `debug`.
 
   Migration, when an app switches its reads to the kit:
