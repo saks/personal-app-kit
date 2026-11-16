@@ -17,8 +17,9 @@
 //!   `Err(EnqueueError::Jni(_))`. Both are logged. Neither panics.
 //! - In a cold process the worker needs no Tauri runtime: it loads the app's
 //!   library, calls `BackgroundSync::init_logs` (if set), then
-//!   `BackgroundSync::run` with the data dir. A panic, in the app's
-//!   registration, its `init_logs` or its run, becomes `WorkerResult::Retry`.
+//!   `BackgroundSync::run` with the data dir. A panic while reading that
+//!   dir, or in the app's registration, its `init_logs` or its run, becomes
+//!   `WorkerResult::Retry`.
 //!   A library that cannot be loaded fails the job (`SyncWorker` does not
 //!   retry an `UnsatisfiedLinkError`).
 //!

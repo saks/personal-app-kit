@@ -43,3 +43,26 @@ fn the_registered_job_reaches_the_glue() {
     assert_eq!(job.log_tag.as_str(), "kit-test");
     assert_eq!(job.schedule.millis(), [10_000, 30_000]);
 }
+
+#[test]
+fn a_read_data_dir_returns_the_string() {
+    assert_eq!(
+        data_dir_from(Outcome::Ok("/data/app".into())).unwrap(),
+        "/data/app"
+    );
+}
+
+#[test]
+fn a_jni_error_reading_the_data_dir_is_unreadable() {
+    let outcome = Outcome::Err(jni::errors::Error::NullPtr("data dir"));
+    assert!(matches!(
+        data_dir_from(outcome),
+        Err(NoDataDir::Unreadable(err)) if err == "Null pointer in data dir"
+    ));
+}
+
+#[test]
+fn a_panic_reading_the_data_dir_is_kept() {
+    let outcome = Outcome::Panic(Box::new("reading the data dir"));
+    assert!(matches!(data_dir_from(outcome), Err(NoDataDir::Panicked)));
+}
