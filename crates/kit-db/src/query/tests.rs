@@ -202,6 +202,32 @@ async fn with_transaction_on_a_temp_file_commits_ok_and_rolls_back_err() {
     assert_eq!(optional_i64(&row, 0).unwrap(), Some(1));
 }
 
+/// `ON CONFLICT ROLLBACK` ends the transaction inside the engine. The
+/// connection must still answer the next query, and the caller must still
+/// see the constraint error.
+#[tokio::test]
+async fn engine_side_rollback_leaves_the_connection_usable() {
+    let conn = memory_conn().await;
+    conn.execute("CREATE TABLE t (n INTEGER UNIQUE ON CONFLICT ROLLBACK)", ())
+        .await
+        .unwrap();
+    conn.execute("INSERT INTO t (n) VALUES (1)", ())
+        .await
+        .unwrap();
+    let err = with_transaction(&conn, |tx| {
+        Box::pin(async move {
+            tx.execute("INSERT INTO t (n) VALUES (1)", ())
+                .await
+                .map_err(Error::from)?;
+            Ok::<(), AppError>(())
+        })
+    })
+    .await
+    .unwrap_err();
+    assert_eq!(err, AppError("UNIQUE constraint failed: t.n".into()));
+    assert_eq!(count(&conn).await, 1);
+}
+
 #[tokio::test]
 async fn begin_then_in_transaction_commits() {
     let conn = memory_conn().await;
