@@ -1,7 +1,8 @@
 //! JNI between `SyncWorker.kt` and Rust. Compiled for Android and for host
 //! tests (no Java VM there, so only the types are checked).
 
-use jni::errors::Result;
+use std::fmt;
+
 use jni::objects::{JClass, JObject, JString, JValue};
 use jni::sys::jint;
 use jni::vm::JavaVM;
@@ -9,23 +10,60 @@ use jni::{EnvUnowned, Outcome, jni_sig, jni_str};
 use tracing::{info, warn};
 
 use crate::config::{BackgroundSync, Schedule};
+use crate::process;
 use crate::registry::registered;
 use crate::worker::{self, NoDataDir};
 
 /// `SyncWorker`'s class, which fixes the `runSync` symbol below.
 const WORKER_CLASS: &str = "com.saksmlz.kit.android.SyncWorker";
 
-/// `SyncWorker.runSync(dataDir)`, on WorkManager's background thread (not a
-/// tokio thread, so the app's run may `block_on`).
+/// Why `enqueue` could not hand the job to WorkManager.
+#[derive(Debug)]
+enum EnqueueError {
+    /// No application `Context`: `runSync` has not stashed one, and (on the
+    /// host, or before the Activity) tao's `ndk-context` is not available.
+    NoAndroidContext,
+    /// A JNI call failed.
+    Jni(jni::errors::Error),
+}
+
+impl fmt::Display for EnqueueError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoAndroidContext => f.write_str("android context is not initialized"),
+            Self::Jni(err) => write!(f, "{err}"),
+        }
+    }
+}
+
+impl std::error::Error for EnqueueError {}
+
+impl From<jni::errors::Error> for EnqueueError {
+    fn from(err: jni::errors::Error) -> Self {
+        Self::Jni(err)
+    }
+}
+
+/// `SyncWorker.runSync(dataDir, context)`, on WorkManager's background thread
+/// (not a tokio thread, so the app's run may `block_on`). `context` is the
+/// application `Context`, kept for a later `enqueue` in this process.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_saksmlz_kit_android_SyncWorker_runSync<'local>(
     mut unowned_env: EnvUnowned<'local>,
     _class: JClass<'local>,
     data_dir: JString<'local>,
+    context: JObject<'local>,
 ) -> jint {
     // `EnvUnowned` is the FFI-safe pointer. `try_to_string` needs an `Env`.
+    // Noting the context here also sets this crate's `JavaVM` singleton
+    // (`AttachGuard`), before `init_logs` or the app's run.
     let data_dir = match unowned_env
-        .with_env_no_catch(|env| data_dir.try_to_string(env))
+        .with_env_no_catch(|env| {
+            if let Err(err) = process::note(env, &context) {
+                warn!(error = %err, "sync: could not keep the application context");
+            }
+            data_dir.try_to_string(env)
+        })
         .into_outcome()
     {
         Outcome::Ok(dir) => Ok(dir),
@@ -37,7 +75,11 @@ pub extern "system" fn Java_com_saksmlz_kit_android_SyncWorker_runSync<'local>(
 }
 
 /// `SyncWorker.enqueue(..)`: one network-constrained job, replacing any
-/// queued one. Call it from the running app (after a save, on pause).
+/// queued one. Call it from the running app (after a save, on pause) or from
+/// the worker's `run` (a follow-up). The worker process has no Tauri
+/// Activity: `runSync` keeps the application `Context` `SyncWorker` passed
+/// in. The in-app call still needs the Activity to have started (tao's
+/// `ndk-context`). A missing context is logged, not a panic.
 pub fn enqueue() {
     match try_enqueue(&registered()) {
         Ok(()) => info!("sync: background job enqueued"),
@@ -51,24 +93,15 @@ fn seconds(schedule: Schedule) -> [i64; 2] {
         .map(|wait| i64::try_from(wait.as_secs()).unwrap_or(i64::MAX))
 }
 
-fn try_enqueue(job: &BackgroundSync) -> Result<()> {
-    let ctx = ndk_context::android_context();
-    let vm_ptr: *mut jni::sys::JavaVM = ctx.vm().cast();
-    if vm_ptr.is_null() {
-        return Err(jni::errors::Error::NullPtr("JavaVM"));
-    }
-    // SAFETY: non-null process JavaVM, valid for the process lifetime.
-    let vm = unsafe { JavaVM::from_raw(vm_ptr) };
-    let context_ptr: jni::sys::jobject = ctx.context().cast();
-    if context_ptr.is_null() {
-        return Err(jni::errors::Error::NullPtr("Context"));
-    }
+fn try_enqueue(job: &BackgroundSync) -> Result<(), EnqueueError> {
+    let (vm, context_ptr) = vm_and_context()?;
     let [initial_delay_s, backoff_s] = seconds(job.schedule);
     // Attaches for the thread's lifetime and pushes a local frame. A pending
     // exception becomes `CaughtJavaException`, which `enqueue` logs.
-    vm.attach_current_thread(|env| {
-        // SAFETY: tao keeps this global application Context for the process.
-        // The wrapper only borrows it; nothing here deletes the reference.
+    vm.attach_current_thread(|env| -> jni::errors::Result<()> {
+        // SAFETY: a process-lifetime global application Context (stashed in
+        // `runSync`, or kept by tao). The wrapper only borrows it; nothing
+        // here deletes the reference.
         let context = unsafe { JObject::from_raw(env, context_ptr) };
         // FindClass on a non-main thread misses the app loader. Load
         // `SyncWorker` through the application context's loader instead.
@@ -107,6 +140,51 @@ fn try_enqueue(job: &BackgroundSync) -> Result<()> {
         )?;
         Ok(())
     })
+    .map_err(EnqueueError::from)
+}
+
+/// The stashed application `Context` and this crate's `JavaVM`, or tao's
+/// `ndk-context` when the Activity has started and `runSync` has not.
+fn vm_and_context() -> Result<(JavaVM, jni::sys::jobject), EnqueueError> {
+    if let Some(context) = process::application_context() {
+        let vm = JavaVM::singleton().map_err(|_| EnqueueError::NoAndroidContext)?;
+        return Ok((vm, context));
+    }
+    // No stashed context. If this crate has already seen a JavaVM, `runSync`
+    // attached and `note` failed. tao's global is unset there, and
+    // `android_context` panics. The in-app path has no singleton yet (tao
+    // uses another copy of `jni`), so it falls through.
+    if JavaVM::singleton().is_ok() {
+        return Err(EnqueueError::NoAndroidContext);
+    }
+    let (vm, context) = vm_and_context_from_activity()?;
+    // `from_raw` has now set the singleton. Remember tao's global so the
+    // next call takes the stash branch instead of the one above.
+    process::keep(context);
+    Ok((vm, context))
+}
+
+#[cfg(target_os = "android")]
+fn vm_and_context_from_activity() -> Result<(JavaVM, jni::sys::jobject), EnqueueError> {
+    let ctx = ndk_context::android_context();
+    let vm_ptr: *mut jni::sys::JavaVM = ctx.vm().cast();
+    if vm_ptr.is_null() {
+        return Err(jni::errors::Error::NullPtr("JavaVM").into());
+    }
+    // SAFETY: non-null process JavaVM, valid for the process lifetime.
+    let vm = unsafe { JavaVM::from_raw(vm_ptr) };
+    let context_ptr: jni::sys::jobject = ctx.context().cast();
+    if context_ptr.is_null() {
+        return Err(jni::errors::Error::NullPtr("Context").into());
+    }
+    Ok((vm, context_ptr))
+}
+
+/// Host tests have no Activity and no `runSync`. Calling `android_context`
+/// would panic; the missing context is an error.
+#[cfg(not(target_os = "android"))]
+fn vm_and_context_from_activity() -> Result<(JavaVM, jni::sys::jobject), EnqueueError> {
+    Err(EnqueueError::NoAndroidContext)
 }
 
 #[cfg(test)]
