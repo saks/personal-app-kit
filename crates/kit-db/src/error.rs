@@ -41,9 +41,16 @@ pub enum Error {
     EmptyTimestamp,
     #[error("timestamp must be an ISO-8601 datetime")]
     InvalidTimestamp,
+    /// `TURSO_DB_BIN` was set, and that path is not an existing file. The
+    /// lookup does not fall through.
     #[error(
-        "{test}: tursodb not found (looked in {}); run ./scripts/fetch-tursodb.sh (make check / make e2e)",
-        workspace.display()
+        "TURSO_DB_BIN points at {path}, which is not a file",
+        path = path.display()
+    )]
+    TursodbOverrideMissing { path: PathBuf },
+    #[error(
+        "{test}: tursodb not found (TURSO_DB_BIN unset; looked in {workspace}, ~/.turso/tursodb, and PATH); run ./scripts/fetch-tursodb.sh (make check / make e2e)",
+        workspace = workspace.display()
     )]
     TursodbNotFound { test: String, workspace: PathBuf },
 }

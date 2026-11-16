@@ -81,21 +81,31 @@ fn find_tursodb_prefers_existing_override() {
         None,
         None,
         &dir.path().join("unused"),
-    );
+    )
+    .unwrap();
     assert_eq!(found.as_deref(), Some(bin.as_path()));
 }
 
 #[test]
-fn find_tursodb_ignores_missing_override() {
+fn find_tursodb_rejects_missing_override() {
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path().join("e2e/.tursodb/tursodb");
     touch(&workspace);
-    let found = find_tursodb_bin_in(
-        Some(dir.path().join("missing").to_str().unwrap()),
-        None,
-        None,
-        &workspace,
-    );
+    let missing = dir.path().join("missing");
+    let err =
+        find_tursodb_bin_in(Some(missing.to_str().unwrap()), None, None, &workspace).unwrap_err();
+    match err {
+        Error::TursodbOverrideMissing { path } => assert_eq!(path, missing),
+        other => panic!("expected override error, got {other}"),
+    }
+}
+
+#[test]
+fn find_tursodb_blank_override_uses_workspace() {
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = dir.path().join("e2e/.tursodb/tursodb");
+    touch(&workspace);
+    let found = find_tursodb_bin_in(Some("   "), None, None, &workspace).unwrap();
     assert_eq!(found.as_deref(), Some(workspace.as_path()));
 }
 
@@ -109,7 +119,8 @@ fn find_tursodb_uses_home_then_path() {
         Some(&dir.path().join("home")),
         None,
         &dir.path().join("unused"),
-    );
+    )
+    .unwrap();
     assert_eq!(found_home.as_deref(), Some(home_bin.as_path()));
 
     let path_dir = dir.path().join("bin");
@@ -120,10 +131,11 @@ fn find_tursodb_uses_home_then_path() {
         None,
         Some(path_dir.as_os_str()),
         &dir.path().join("unused"),
-    );
+    )
+    .unwrap();
     assert_eq!(found_path.as_deref(), Some(path_bin.as_path()));
     assert_eq!(
-        find_tursodb_bin_in(None, None, None, Path::new("/no/such/tursodb")),
+        find_tursodb_bin_in(None, None, None, Path::new("/no/such/tursodb")).unwrap(),
         None
     );
 }
@@ -139,5 +151,20 @@ fn missing_tursodb_error_names_the_test_and_the_fetch_script() {
         msg.starts_with("cdc_round_trip: tursodb not found"),
         "{msg}"
     );
+    assert!(msg.contains("TURSO_DB_BIN unset"), "{msg}");
+    assert!(msg.contains("/repo/e2e/.tursodb/tursodb"), "{msg}");
+    assert!(msg.contains("~/.turso/tursodb"), "{msg}");
+    assert!(msg.contains("PATH"), "{msg}");
     assert!(msg.contains("scripts/fetch-tursodb.sh"), "{msg}");
+}
+
+#[test]
+fn missing_override_names_the_path() {
+    let err = Error::TursodbOverrideMissing {
+        path: PathBuf::from("/tmp/missing-tursodb"),
+    };
+    assert_eq!(
+        err.to_string(),
+        "TURSO_DB_BIN points at /tmp/missing-tursodb, which is not a file"
+    );
 }
