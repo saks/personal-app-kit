@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use super::*;
-use crate::config::Schedule;
 
 fn job(run: fn(&Path) -> WorkerResult) -> BackgroundSync {
     BackgroundSync {
@@ -9,10 +8,7 @@ fn job(run: fn(&Path) -> WorkerResult) -> BackgroundSync {
         run,
         lib_name: crate::lib_name!("app_lib"),
         log_tag: kit_core::log_tag!("app"),
-        schedule: Schedule {
-            initial_delay: Duration::from_secs(10),
-            backoff: Duration::from_secs(30),
-        },
+        schedule: crate::schedule!(Duration::from_secs(10), Duration::from_secs(30)),
     }
 }
 

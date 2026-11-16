@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use super::*;
 
 #[test]
@@ -43,18 +41,28 @@ fn the_registered_job_reaches_the_glue() {
     let job = registered();
     assert_eq!(job.lib_name.as_str(), "kit_test_lib");
     assert_eq!(job.log_tag.as_str(), "kit-test");
+    assert_eq!(job.schedule.millis(), [10_000, 30_000]);
 }
 
 #[test]
-fn the_schedule_goes_to_kotlin_in_whole_seconds() {
-    let schedule = Schedule {
-        initial_delay: Duration::from_millis(10_900),
-        backoff: Duration::from_secs(30),
-    };
-    assert_eq!(seconds(schedule), [10, 30]);
-    let huge = Schedule {
-        initial_delay: Duration::MAX,
-        backoff: Duration::ZERO,
-    };
-    assert_eq!(seconds(huge), [i64::MAX, 0]);
+fn a_read_data_dir_returns_the_string() {
+    assert_eq!(
+        data_dir_from(Outcome::Ok("/data/app".into())).unwrap(),
+        "/data/app"
+    );
+}
+
+#[test]
+fn a_jni_error_reading_the_data_dir_is_unreadable() {
+    let outcome = Outcome::Err(jni::errors::Error::NullPtr("data dir"));
+    assert!(matches!(
+        data_dir_from(outcome),
+        Err(NoDataDir::Unreadable(err)) if err == "Null pointer in data dir"
+    ));
+}
+
+#[test]
+fn a_panic_reading_the_data_dir_is_kept() {
+    let outcome = Outcome::Panic(Box::new("reading the data dir"));
+    assert!(matches!(data_dir_from(outcome), Err(NoDataDir::Panicked)));
 }
