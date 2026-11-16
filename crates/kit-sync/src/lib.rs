@@ -116,22 +116,21 @@ impl AutoSync {
     /// This is the backoff counter, not a UI failure streak. The app owns
     /// that (see the crate-level "App-specific status" section).
     ///
-    /// It is `0` after the backoff is reset:
-    /// - [`schedule_after_write`], while automatic runs are active (reset
-    ///   when the write is scheduled);
-    /// - [`on_resumed`] (and [`on_first_load`], which calls it once), while
-    ///   automatic runs are active. The count is reset to `0` before `Auto`
-    ///   runs. When `Auto` is debounced and a retry delay is still stored
-    ///   (even one that already fired), it is stored as `1` again, the first
-    ///   step;
-    /// - [`on_online`], while automatic runs are active;
-    /// - [`settings_saved`], whenever the scheduler exists;
-    /// - a successful [`run`], including Manual;
-    /// - a [`run`] that fails as `NeedsUser`, when that run started after
-    ///   the latest [`settings_saved`].
+    /// A count is stored when an automatic run fails as `ClearsByItself` and
+    /// that run started after the latest [`settings_saved`]. The next such
+    /// failure continues from it. A retry that fires and finds nothing
+    /// pending leaves the count and is no longer scheduled.
     ///
-    /// A retry that fires and finds nothing pending leaves this count. The
-    /// next automatic failure that clears by itself continues from it.
+    /// The count is cleared by:
+    /// - [`schedule_after_write`], [`on_online`], and [`on_resumed`] /
+    ///   [`on_first_load`], while automatic runs are active;
+    /// - [`settings_saved`], whenever the scheduler exists;
+    /// - a successful [`run`], including Manual, when that run started after
+    ///   the latest [`settings_saved`];
+    /// - a [`run`] that fails as `NeedsUser`, on the same condition.
+    ///
+    /// A debounced [`on_resumed`] is the exception: if a count is stored,
+    /// including a retry that already fired, it is stored as `1` again.
     pub fn backoff_attempts(&self) -> u32 {
         self.backoff.backoff_attempts()
     }

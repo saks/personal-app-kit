@@ -10,7 +10,7 @@ use tracing::info;
 
 use crate::host::Host;
 use crate::lock;
-use crate::run::{active, request};
+use crate::run::request;
 
 /// A signed fraction of a retry delay to add or remove, within
 /// ±[`Spread::MAX`].
@@ -80,10 +80,75 @@ fn random_unit() -> f64 {
 #[derive(Debug)]
 enum Retry {
     Off,
+    /// A count is stored. The timer may still be waiting, or it may already
+    /// have fired (`AbortHandle::is_finished`); the count remains either way.
     Armed {
         failures: NonZeroU32,
         task: AbortHandle,
     },
+}
+
+/// A backoff event. The caller decides whether it happened. `step` decides
+/// what it does to the stored count.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Event {
+    /// A local save, while automatic runs are active.
+    Write,
+    /// The network is back, while automatic runs are active.
+    Online,
+    /// Settings were saved. Clears even when automatic runs are inactive.
+    SettingsSaved,
+    /// A successful run whose epoch is still current.
+    Succeeded,
+    /// A `NeedsUser` failure whose epoch is still current.
+    NeedsUser,
+    /// An automatic failure that clears by itself, whose epoch is still
+    /// current.
+    Failed,
+    /// The app resumed. `debounced` means this resume will not run `Auto`.
+    Resumed { debounced: bool },
+}
+
+impl Event {
+    /// These events are ignored when automatic runs are inactive.
+    fn requires_active(self) -> bool {
+        matches!(
+            self,
+            Self::Write | Self::Online | Self::Failed | Self::Resumed { .. }
+        )
+    }
+}
+
+/// What one event does to the stored count.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Action {
+    /// Leave the count and the timer alone.
+    Keep,
+    /// Drop the count and abort the timer, if there is one.
+    Clear,
+    /// Abort any current timer and arm a new one at this count.
+    Arm(NonZeroU32),
+}
+
+/// What `event` does to a stored count. `None` is off. `Some` is a stored
+/// count, including a timer that has already fired.
+fn step(stored: Option<NonZeroU32>, event: Event) -> Action {
+    match event {
+        Event::Failed => Action::Arm(match stored {
+            None => NonZeroU32::MIN,
+            Some(failures) => failures.saturating_add(1),
+        }),
+        Event::Resumed { debounced: true } => match stored {
+            None => Action::Keep,
+            Some(_) => Action::Arm(NonZeroU32::MIN),
+        },
+        Event::Write
+        | Event::Online
+        | Event::SettingsSaved
+        | Event::Succeeded
+        | Event::NeedsUser
+        | Event::Resumed { debounced: false } => Action::Clear,
+    }
 }
 
 /// The armed retry, if any.
@@ -97,23 +162,11 @@ impl Default for Backoff {
 }
 
 impl Backoff {
-    /// Drop the backoff: the next failure waits the first step again.
-    pub(crate) fn reset(&self) {
-        if let Retry::Armed { task, .. } = std::mem::replace(&mut *lock(&self.0), Retry::Off) {
-            task.abort();
-        }
-    }
-
     pub(crate) fn backoff_attempts(&self) -> u32 {
         match &*lock(&self.0) {
             Retry::Off => 0,
             Retry::Armed { failures, .. } => failures.get(),
         }
-    }
-
-    /// Failing, whether or not the retry already fired.
-    pub(crate) fn retrying(&self) -> bool {
-        matches!(&*lock(&self.0), Retry::Armed { .. })
     }
 
     /// A retry is armed and has not fired yet.
@@ -123,42 +176,66 @@ impl Backoff {
             Retry::Armed { task, .. } => !task.is_finished(),
         }
     }
+
+    /// Apply `event` under this lock. `arm` runs only when the decision arms
+    /// a timer, and it must not call [`apply`]: the lock is held across it.
+    fn transition(&self, event: Event, arm: impl FnOnce(NonZeroU32) -> AbortHandle) {
+        let mut retry = lock(&self.0);
+        let stored = match &*retry {
+            Retry::Off => None,
+            Retry::Armed { failures, .. } => Some(*failures),
+        };
+        match step(stored, event) {
+            Action::Keep => {}
+            Action::Clear => {
+                if let Retry::Armed { task, .. } = std::mem::replace(&mut *retry, Retry::Off) {
+                    task.abort();
+                }
+            }
+            Action::Arm(failures) => {
+                if let Retry::Armed { task, .. } = std::mem::replace(&mut *retry, Retry::Off) {
+                    task.abort();
+                }
+                let task = arm(failures);
+                *retry = Retry::Armed { failures, task };
+            }
+        }
+    }
 }
 
-/// After an automatic failure that clears by itself: one `Retry` run after
-/// the next delay. The retry skips the run when nothing is pending (no
-/// polling).
-pub(crate) fn arm_retry<H: Host>(host: &H) {
-    let Some(auto) = active(host) else { return };
-    let mut retry = lock(&auto.backoff.0);
-    let failures = match &*retry {
-        Retry::Off => NonZeroU32::MIN,
-        Retry::Armed { failures, task } => {
-            task.abort();
-            failures.saturating_add(1)
-        }
-    };
-    let wait = auto
-        .policy
-        .retry_delay(failures, auto.policy.jitter.sample());
-    info!(
-        failures = failures.get(),
-        wait_ms = wait.as_millis(),
-        "sync: retry armed"
-    );
+/// Apply one [`Event`] under the backoff lock. This is the only mutator.
+///
+/// `Write`, `Online`, `Failed`, and `Resumed` do nothing when automatic runs
+/// are inactive. `SettingsSaved`, `Succeeded`, and `NeedsUser` still clear.
+/// No scheduler at all does nothing.
+pub(crate) fn apply<H: Host>(host: &H, event: Event) {
+    let Some(auto) = host.autosync() else { return };
+    if event.requires_active() && !auto.active() {
+        return;
+    }
     let task_host = host.clone();
-    let task = auto.rt.spawn(async move {
-        tokio::time::sleep(wait).await;
-        if matches!(task_host.pending().await, Ok(0)) {
-            info!("sync: retry skipped; nothing pending");
-            return;
-        }
-        request(&task_host, SyncTrigger::Retry);
+    let rt = auto.rt.clone();
+    let policy = auto.policy.clone();
+    auto.backoff.transition(event, move |failures| {
+        let wait = policy.retry_delay(failures, policy.jitter.sample());
+        info!(
+            failures = failures.get(),
+            wait_ms = wait.as_millis(),
+            "sync: retry armed"
+        );
+        // One `Retry` run after the delay. Nothing pending skips the run (no
+        // polling). Dropping the `JoinHandle` detaches that task; the stored
+        // `AbortHandle` is what cancels it.
+        rt.spawn(async move {
+            tokio::time::sleep(wait).await;
+            if matches!(task_host.pending().await, Ok(0)) {
+                info!("sync: retry skipped; nothing pending");
+                return;
+            }
+            request(&task_host, SyncTrigger::Retry);
+        })
+        .abort_handle()
     });
-    *retry = Retry::Armed {
-        failures,
-        task: task.abort_handle(),
-    };
 }
 
 #[cfg(test)]

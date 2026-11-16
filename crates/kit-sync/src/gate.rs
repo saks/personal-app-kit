@@ -3,6 +3,7 @@
 
 use kit_sync_types::SyncTrigger;
 
+use crate::backoff::{Event, apply};
 use crate::host::Host;
 use crate::run::request;
 
@@ -38,7 +39,7 @@ pub enum Gate {
 pub fn settings_saved<H: Host>(host: &H, gate: Gate) {
     let Some(auto) = host.autosync() else { return };
     auto.shared.set_gate(gate);
-    auto.backoff.reset();
+    apply(host, Event::SettingsSaved);
     if !auto.active() {
         return;
     }
