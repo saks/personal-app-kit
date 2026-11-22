@@ -4,7 +4,13 @@ All kit crates share one version (see `RELEASING.md`). Newest first.
 
 This file starts with the first release. Earlier work is in the git history and the merged PRs.
 
-## Unreleased
+## v0.1.0
+
+- tauri-plugin-kit-android: `kit-core` is a dependency only off wasm32, and `tracing` only on Android (plus host dev-dependencies), so Rust 1.100 reports no `unused_dependencies` warnings. No API change.
+
+- kit-ui: new logic-only crate (host + wasm), extracted from octo-budget-rs `main` with the same API shape (saks/sickness_tracker#101). `overlay`: `OVERLAY_ROOT_ID`, `overlay_root`, `portal_overlay`, `OVERLAY_HOST_ATTR`, `use_overlay_host`, `portal_into`, `is_topmost`, `trap_tab`, `OverlayClose::{Click, Plain}`, `use_overlay_keys`. `back`: Android Back as the topmost overlay's Escape (`claim_android_back() -> BackGuard`, `dispatch_escape`), registered through `window.__TAURI__.app.onBackButtonPress` with no Kotlin or capability change. `keyboard`: `bind() -> Option<ImeGuard>`, `reveal_element`. `pull_refresh`: `RefreshCfg`, `THRESHOLD`, `REFRESHING_H`, `pull_offset`, `should_trigger`, `bind() -> PullGuard`. `ImeGuard` and `PullGuard` are `#[must_use]`, and dropping either removes its listeners. The app copies of `ImeGuard` left them registered; both apps already hold the guard until unmount. Warnings go through `kit_ui::set_warn(WarnFn)` (`WarnFn = fn(&str)`, default `console.warn`). No markup components and no CSS.
+
+  Migration (saks/sickness_tracker#102, saks/octo-budget-rs#156): swap the app's `chrome` overlay items, `chrome::back`, `keyboard` and `pull_refresh` imports for `kit_ui::*`, and call `kit_ui::set_warn` at startup with the app's prefixed logger. The app keeps `.record-form` / `.record-field`, `--ime-bottom` and `.ptr-indicator` in its own markup and CSS.
 
 - kit-db: a set `TURSO_DB_BIN` that is not an existing file is `Error::TursodbOverrideMissing` and does not fall through to the workspace binary, `~/.turso/tursodb`, or `PATH`. `find_tursodb_bin` and `find_tursodb_bin_in` return `Result<Option<PathBuf>>`. `Ok(None)` still means the override was unset and every fallback missed. `tursodb_bin_for_test` returns the override error as-is, and still returns `Error::TursodbNotFound` in that miss case. The not-found message names the workspace path, `~/.turso/tursodb`, and `PATH`.
 

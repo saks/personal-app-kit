@@ -36,6 +36,8 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = ["Window", "Document", "Element", "Storage", "MediaQueryList", "EventTarget"] }
 js-sys = "0.3"
+# kit-ui: Android Back payload.
+serde-wasm-bindgen = "0.6"
 # Test-only: block_on for yew SSR renders (kit-theme).
 futures = { version = "0.3", default-features = false, features = ["executor"] }
 # Android JNI (tauri-plugin-kit-android). Same versions as OB.
