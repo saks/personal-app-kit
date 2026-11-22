@@ -29,8 +29,9 @@ thread_local! {
     static WARN: Cell<WarnFn> = const { Cell::new(console_warn) };
 }
 
-/// Routes the kit's warnings to `sink`. Call once at startup; until then they
-/// go to `console.warn`.
+/// Routes the kit's warnings on this thread (the wasm UI thread) to `sink`,
+/// replacing any earlier sink. Call it at startup; until then warnings go to
+/// `console.warn`.
 pub fn set_warn(sink: WarnFn) {
     WARN.with(|slot| slot.set(sink));
 }

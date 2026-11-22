@@ -359,7 +359,7 @@ fn overlay_presence() -> OverlayPresence {
 }
 
 /// Capture-phase Escape on `document`, the same event [`crate::overlay::use_overlay_keys`] handles.
-/// The topmost overlay clears a tag query or closes; a sheet under it ignores it.
+/// Only the topmost overlay handles it (usually by closing); overlays under it ignore it.
 pub fn dispatch_escape() {
     let Some(document) = web_sys::window().and_then(|window| window.document()) else {
         return;

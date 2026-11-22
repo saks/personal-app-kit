@@ -134,8 +134,8 @@ fn item_element(nodes: &NodeList, index: u32) -> Option<HtmlElement> {
         .and_then(|node| node.dyn_into::<HtmlElement>().ok())
 }
 
-/// Close action for [`use_overlay_keys`]. `FormOverlay` callers take a
-/// `MouseEvent` (their Close button); `ModalSheet` callers take `()`.
+/// Close action for [`use_overlay_keys`]. `Click` for a close callback that
+/// takes the Close button's `MouseEvent`, `Plain` for one that takes `()`.
 #[derive(Clone)]
 pub enum OverlayClose {
     /// Emits a synthetic `click` `MouseEvent`.
