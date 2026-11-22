@@ -12,21 +12,27 @@ use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use web_sys::{
-    AddEventListenerOptions, Event, HtmlElement, PointerEvent, ScrollBehavior,
-    ScrollIntoViewOptions, ScrollLogicalPosition,
+    AddEventListenerOptions, Document, Event, HtmlElement, PointerEvent, ScrollBehavior,
+    ScrollIntoViewOptions, ScrollLogicalPosition, VisualViewport, Window,
 };
 
 const MIN_IME_PX: f64 = 80.0;
 const FALLBACK_IME_RATIO: f64 = 0.45;
 const SUPPRESS_CLICK_MS: i32 = 500;
 
-/// Listeners from [`bind`]. Keep it for the app's lifetime.
+/// Listeners from [`bind`] on `window`, `document` and `visualViewport`.
+/// Dropping it removes every one of them; keep it for as long as IME tracking
+/// should run (usually the app's lifetime).
+#[must_use = "dropping the guard removes the keyboard listeners"]
 pub struct ImeGuard {
-    _on_change: Closure<dyn FnMut()>,
-    _on_pointer_down: Closure<dyn FnMut(PointerEvent)>,
-    _on_pointer_up: Closure<dyn FnMut(PointerEvent)>,
-    _on_pointer_cancel: Closure<dyn FnMut(PointerEvent)>,
-    _on_click: Closure<dyn FnMut(Event)>,
+    window: Window,
+    document: Option<Document>,
+    viewport: Option<VisualViewport>,
+    on_change: Closure<dyn FnMut()>,
+    on_pointer_down: Closure<dyn FnMut(PointerEvent)>,
+    on_pointer_up: Closure<dyn FnMut(PointerEvent)>,
+    on_pointer_cancel: Closure<dyn FnMut(PointerEvent)>,
+    on_click: Closure<dyn FnMut(Event)>,
 }
 
 struct PendingTouchClick {
@@ -34,7 +40,8 @@ struct PendingTouchClick {
     button: HtmlElement,
 }
 
-/// Starts IME tracking. `None` outside a browser window.
+/// Starts IME tracking until the returned guard is dropped. `None` outside a
+/// browser window.
 pub fn bind() -> Option<ImeGuard> {
     let window = web_sys::window()?;
     let on_change = Closure::wrap(Box::new(|| {
@@ -74,7 +81,8 @@ pub fn bind() -> Option<ImeGuard> {
             }
         }) as Box<dyn FnMut(Event)>
     });
-    if let Some(doc) = window.document() {
+    let document = window.document();
+    if let Some(doc) = document.as_ref() {
         let _ = doc.add_event_listener_with_callback("focusin", cb);
         let _ = doc.add_event_listener_with_callback("focusout", cb);
         let capture = AddEventListenerOptions::new();
@@ -100,18 +108,59 @@ pub fn bind() -> Option<ImeGuard> {
             &capture,
         );
     }
-    if let Some(viewport) = window.visual_viewport() {
+    let viewport = window.visual_viewport();
+    if let Some(viewport) = viewport.as_ref() {
         let _ = viewport.add_event_listener_with_callback("resize", cb);
         let _ = viewport.add_event_listener_with_callback("scroll", cb);
     }
     apply_ime_inset();
     Some(ImeGuard {
-        _on_change: on_change,
-        _on_pointer_down: on_pointer_down,
-        _on_pointer_up: on_pointer_up,
-        _on_pointer_cancel: on_pointer_cancel,
-        _on_click: on_click,
+        window,
+        document,
+        viewport,
+        on_change,
+        on_pointer_down,
+        on_pointer_up,
+        on_pointer_cancel,
+        on_click,
     })
+}
+
+impl Drop for ImeGuard {
+    fn drop(&mut self) {
+        let cb = self.on_change.as_ref().unchecked_ref();
+        let _ = self
+            .window
+            .remove_event_listener_with_callback("resize", cb);
+        if let Some(doc) = self.document.as_ref() {
+            let _ = doc.remove_event_listener_with_callback("focusin", cb);
+            let _ = doc.remove_event_listener_with_callback("focusout", cb);
+            let _ = doc.remove_event_listener_with_callback_and_bool(
+                "pointerdown",
+                self.on_pointer_down.as_ref().unchecked_ref(),
+                true,
+            );
+            let _ = doc.remove_event_listener_with_callback_and_bool(
+                "pointerup",
+                self.on_pointer_up.as_ref().unchecked_ref(),
+                true,
+            );
+            let _ = doc.remove_event_listener_with_callback_and_bool(
+                "pointercancel",
+                self.on_pointer_cancel.as_ref().unchecked_ref(),
+                true,
+            );
+            let _ = doc.remove_event_listener_with_callback_and_bool(
+                "click",
+                self.on_click.as_ref().unchecked_ref(),
+                true,
+            );
+        }
+        if let Some(viewport) = self.viewport.as_ref() {
+            let _ = viewport.remove_event_listener_with_callback("resize", cb);
+            let _ = viewport.remove_event_listener_with_callback("scroll", cb);
+        }
+    }
 }
 
 /// Re-measures the keyboard and scrolls `el` (or its `<label>`) into view.
