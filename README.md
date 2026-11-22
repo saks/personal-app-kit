@@ -17,7 +17,7 @@ Plan and decisions: [sickness_tracker#87](https://github.com/saks/sickness_track
 | `kit-ui` | host + wasm | Logic-only UI hooks, no markup: overlay stack (`use_overlay_host`, `use_overlay_keys`, `OverlayClose`, portals, topmost-only Escape and Tab wrap), Android Back as the topmost overlay's Escape (`claim_android_back`), IME inset `keyboard::bind`, `pull_refresh` (`pull_offset`, `should_trigger`, `bind`), injected warn sink `set_warn` |
 | `tauri-plugin-kit-android` | Android (host for tests; empty on wasm) | Shared WorkManager background-sync job: `SyncWorker` Kotlin library (linked into the app's Gradle build by `build.rs`), `background_sync!(fn() -> BackgroundSync)`, `lib_name!` (compile-time checked), `enqueue() -> Result<(), EnqueueError>`, `WorkerResult`, optional `init_logs`. JNI symbol fixed by the kit's package. Device test steps: `docs/android-background-sync-device-test.md` |
 
-Every directory under `crates/` is a workspace member. Nothing app-specific is baked into a crate: URLs, env-var prefixes, log tags, storage keys and timings are typed config the app passes in.
+Every directory under `crates/` is a workspace member. Nothing app-specific is baked into a crate: URLs, env-var prefixes, log tags, storage keys and timings are typed config the app passes in. Exception: `kit-ui` keys on a DOM contract both apps share: `#form-overlay-root`, `[data-overlay-host]`, `.record-form button`, `.record-field` and the `--ime-bottom` CSS variable.
 
 ## Using it from an app
 
