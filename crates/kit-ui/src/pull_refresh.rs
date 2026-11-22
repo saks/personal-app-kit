@@ -68,6 +68,7 @@ impl Drag {
 }
 
 /// Listeners from [`bind`]; dropping it removes them.
+#[must_use = "dropping the guard removes the pull-to-refresh listeners"]
 pub struct PullGuard {
     el: HtmlElement,
     on_down: Closure<dyn FnMut(PointerEvent)>,
