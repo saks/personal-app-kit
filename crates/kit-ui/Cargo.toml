@@ -1,0 +1,39 @@
+[package]
+name = "kit-ui"
+description = "Logic-only UI hooks: overlay stack with Android Back, IME keyboard inset, pull-to-refresh. No markup components."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+yew = { workspace = true }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+js-sys = { workspace = true }
+serde = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+web-sys = { workspace = true, features = [
+    "AddEventListenerOptions",
+    "CssStyleDeclaration",
+    "Event",
+    "History",
+    "HtmlElement",
+    "HtmlInputElement",
+    "KeyboardEvent",
+    "KeyboardEventInit",
+    "MouseEvent",
+    "Navigator",
+    "Node",
+    "NodeList",
+    "PointerEvent",
+    "ScrollBehavior",
+    "ScrollIntoViewOptions",
+    "ScrollLogicalPosition",
+    "VisualViewport",
+    "console",
+] }
+
+[lints]
+workspace = true
