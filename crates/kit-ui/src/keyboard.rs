@@ -42,6 +42,7 @@ struct PendingTouchClick {
 
 /// Starts IME tracking until the returned guard is dropped. `None` outside a
 /// browser window.
+#[must_use = "dropping the guard removes the keyboard listeners"]
 pub fn bind() -> Option<ImeGuard> {
     let window = web_sys::window()?;
     let on_change = Closure::wrap(Box::new(|| {
