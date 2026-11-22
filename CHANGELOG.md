@@ -4,7 +4,7 @@ All kit crates share one version (see `RELEASING.md`). Newest first.
 
 This file starts with the first release. Earlier work is in the git history and the merged PRs.
 
-## Unreleased
+## v0.1.0
 
 - tauri-plugin-kit-android: `kit-core` is a dependency only off wasm32, and `tracing` only on Android (plus host dev-dependencies), so Rust 1.100 reports no `unused_dependencies` warnings. No API change.
 
