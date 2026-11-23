@@ -4,6 +4,12 @@ All kit crates share one version (see `RELEASING.md`). Newest first.
 
 This file starts with the first release. Earlier work is in the git history and the merged PRs.
 
+## v0.1.1
+
+- kit-sync: no follow-up run after a failed sync, as in sickness_tracker. When an automatic run fails, the flight ends and the trigger queued behind it is dropped; the retry (or the next event) makes the next attempt. Before, the queued trigger ran right away, failed again offline, and the backoff counted the failure twice (first retry at 15 s instead of 5 s). Successful runs still drain the queue, including engine-requested follow-ups. No API change (saks/personal-app-kit#33).
+
+  Migration: a background job that drives `Flight` itself (the loop in `Flight`'s docs) calls `Flight::next_queued` only after a successful `run`. After a failed `run` it drops the `Flight` instead (saks/sickness_tracker#98).
+
 ## v0.1.0
 
 - tauri-plugin-kit-android: `kit-core` is a dependency only off wasm32, and `tracing` only on Android (plus host dev-dependencies), so Rust 1.100 reports no `unused_dependencies` warnings. No API change.

@@ -733,6 +733,74 @@ async fn queued_writes_also_count_towards_the_limit() {
     assert!(host.auto().shared.idle());
 }
 
+// --- No follow-up after a failure, as in sickness_tracker (kit#33). ---
+
+#[tokio::test(start_paused = true)]
+async fn no_follow_up_after_a_failure() {
+    let host = offline();
+    // The Write fires at 1.5 s and fails offline at 6.5 s.
+    host.script([Behavior::PauseThen {
+        takes: Duration::from_secs(5),
+        error: FakeError::Offline,
+    }]);
+    schedule_after_write(&host);
+    advance(2_000).await;
+    assert_eq!(host.started(), vec![SyncTrigger::Write]);
+    assert!(
+        host.auto()
+            .admit(SyncTrigger::Write)
+            .into_flight()
+            .is_none(),
+        "a trigger during the run joins the queue"
+    );
+
+    advance(4_501).await;
+    assert_eq!(host.started(), vec![SyncTrigger::Write], "no follow-up");
+    assert_eq!(
+        host.finished(),
+        vec![Seen::Failed(
+            SyncTrigger::Write,
+            FailureClass::ClearsByItself,
+            FakeError::Offline
+        )]
+    );
+    assert_eq!(host.auto().backoff_attempts(), 1, "counted once");
+    assert!(host.auto().shared.idle(), "the queued trigger was dropped");
+
+    // The first retry is due 5 s after the failure, not 15 s.
+    advance(4_998).await;
+    assert_eq!(host.started().len(), 1, "before 5 s");
+    advance(2).await;
+    assert_eq!(host.started(), vec![SyncTrigger::Write, SyncTrigger::Retry]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_background_loop_stops_after_a_failure() {
+    // The loop documented on `Flight`.
+    let host = offline();
+    let mut trigger = SyncTrigger::Background;
+    let mut flight = host.auto().admit(trigger).into_flight().expect("idle");
+    assert!(
+        host.auto()
+            .admit(SyncTrigger::Write)
+            .into_flight()
+            .is_none(),
+        "a trigger during the run joins the queue"
+    );
+    loop {
+        if run(&host, trigger).await.is_err() {
+            break;
+        }
+        match flight.next_queued() {
+            Some(next) => trigger = next,
+            None => break,
+        }
+    }
+    drop(flight);
+    assert_eq!(host.started(), vec![SyncTrigger::Background]);
+    assert!(host.auto().shared.idle(), "the queued trigger was dropped");
+}
+
 // --- Added from ST (2): a flight ends on panic or abort. ---
 
 #[tokio::test(start_paused = true)]
