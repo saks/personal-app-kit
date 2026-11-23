@@ -125,21 +125,27 @@ pub(crate) fn request<H: Host>(host: &H, trigger: SyncTrigger) {
 }
 
 /// Run `trigger`, then whatever queues behind it, until the flight ends.
+/// A failed run ends the flight: the queued trigger is dropped and the
+/// retry (or the next event) makes the next attempt.
 async fn drive<H: Host>(host: H, mut flight: Flight, mut trigger: SyncTrigger) {
     loop {
         // Same epoch `run` records: a `settings_saved` during `sync` must not
         // re-arm a retry this save already dropped.
         let seen = host.autosync().map(|auto| auto.shared.epoch());
         // `run` already logs and emits the outcome.
-        if let Err(error) = run(&host, trigger).await
-            && trigger.automatic()
-            && host.class(&error) == FailureClass::ClearsByItself
-            && host
-                .autosync()
-                .zip(seen)
-                .is_some_and(|(auto, seen)| auto.shared.epoch() == seen)
-        {
-            apply(&host, Event::Failed);
+        if let Err(error) = run(&host, trigger).await {
+            if trigger.automatic()
+                && host.class(&error) == FailureClass::ClearsByItself
+                && host
+                    .autosync()
+                    .zip(seen)
+                    .is_some_and(|(auto, seen)| auto.shared.epoch() == seen)
+            {
+                apply(&host, Event::Failed);
+            }
+            // No follow-up after a failure: dropping `flight` drops the
+            // queued trigger, so the backoff is not counted twice.
+            break;
         }
         match flight.next_queued() {
             Some(next) => trigger = next,

@@ -105,7 +105,7 @@ impl AutoSync {
     /// Enter the single flight: start it, or join the one run queued behind
     /// the current run. A background job (Android WorkManager) calls this
     /// itself, runs [`run`] while it holds the [`Flight`], then drains
-    /// [`Flight::next_queued`].
+    /// [`Flight::next_queued`] after each successful run (see [`Flight`]).
     pub fn admit(&self, trigger: SyncTrigger) -> Admission {
         Shared::admit(&self.shared, trigger)
     }

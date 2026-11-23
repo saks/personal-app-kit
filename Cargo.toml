@@ -6,7 +6,7 @@ resolver = "3"
 
 [workspace.package]
 # One version for every kit crate. All crates release together under one tag (RELEASING.md).
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 # Edition 2024 plus let-chains, which the apps' build.rs already uses.
 rust-version = "1.88"

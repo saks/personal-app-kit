@@ -149,8 +149,10 @@ impl Admission {
 /// Dropping a `Flight` (a panic, an aborted task, an early return, `let _ =`,
 /// or `matches!(…, Start(_))`, which looks like a check) sets the flight idle
 /// and drops the queued trigger. A background job holds
-/// the `Flight` across [`crate::run`] and [`Flight::next_queued`], and keeps
-/// calling `next_queued` after a failed run:
+/// the `Flight` across [`crate::run`] and [`Flight::next_queued`]. It calls
+/// `next_queued` only after a successful run; after a failed run it drops the
+/// `Flight`, so the queued trigger is dropped and the job's own retry makes
+/// the next attempt:
 ///
 /// ```no_run
 /// # use kit_sync::{AutoSync, Host, run};
@@ -160,8 +162,11 @@ impl Admission {
 ///     return;
 /// };
 /// loop {
-///     // `run` already emits the outcome. Returning here would drop `flight`.
-///     let _ = run(host, trigger).await;
+///     // `run` already emits the outcome. No follow-up after a failure:
+///     // leaving the loop drops `flight` and the queued trigger.
+///     if run(host, trigger).await.is_err() {
+///         break;
+///     }
 ///     match flight.next_queued() {
 ///         Some(next) => trigger = next,
 ///         None => break,
@@ -178,10 +183,15 @@ pub struct Flight {
 }
 
 impl Flight {
-    /// Call when a run ends: the queued trigger to run next, keeping the
+    /// Call when a run succeeds: the queued trigger to run next, keeping the
     /// flight, or `None`, ending it. Ends the flight when automatic runs are
     /// off or after [`crate::SyncPolicy::max_follow_ups`] queued runs; the
     /// queued trigger is then dropped until the next event.
+    ///
+    /// Do not call it after a failed run: drop the `Flight` instead. That
+    /// ends the flight and drops the queued trigger, and the retry makes the
+    /// next attempt. Running the queued trigger right away would fail again
+    /// and count the failure twice.
     pub fn next_queued(&mut self) -> Option<SyncTrigger> {
         let shared = self.shared.take()?;
         let next = {

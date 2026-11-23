@@ -1329,7 +1329,7 @@ dependencies = [
 
 [[package]]
 name = "kit-build"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "kit-core",
@@ -1337,11 +1337,11 @@ dependencies = [
 
 [[package]]
 name = "kit-core"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "kit-db"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -1358,7 +1358,7 @@ dependencies = [
 
 [[package]]
 name = "kit-sync"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "kit-sync-types",
  "tokio",
@@ -1367,7 +1367,7 @@ dependencies = [
 
 [[package]]
 name = "kit-sync-types"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1376,7 +1376,7 @@ dependencies = [
 
 [[package]]
 name = "kit-theme"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "futures",
  "js-sys",
@@ -1391,7 +1391,7 @@ dependencies = [
 
 [[package]]
 name = "kit-ui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "js-sys",
  "serde",
@@ -2383,7 +2383,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "tauri-plugin-kit-android"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "jni",
  "kit-core",
